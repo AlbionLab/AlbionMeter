@@ -11,6 +11,7 @@
 <p align="center">
   <a href="https://albionlab.app">albionlab.app</a> ·
   <a href="https://albionlab.app/#download">Download</a> ·
+  <a href="https://github.com/AlbionLab/AlbionMeter/releases/latest">Releases</a> ·
   <a href="https://albionlab.app/tutorial">Tutorial</a> ·
   <a href="https://albionlab.app/sessions">Public sessions</a> ·
   <a href="https://discord.gg/pAWsSxN5X2">Discord</a>
@@ -130,6 +131,8 @@ node scripts/publish.mjs linux-x64
 ```
 
 Each command publishes a build that runs on the installed .NET 10 to `artifacts/<runtime>`, with a `LEIA-ME.txt` (English and Portuguese), and creates the matching `.zip` or `.tar.gz` package.
+
+The version comes from `<Version>` in `Directory.Build.props`. Every push to `main` builds both packages and publishes them, with `SHA256SUMS.txt`, to the GitHub release `v<Version>`: a new version creates a new release, the same version replaces its files. Download the latest from [Releases](https://github.com/AlbionLab/AlbionMeter/releases/latest).
 
 ### Layout
 

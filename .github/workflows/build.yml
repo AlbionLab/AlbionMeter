@@ -38,12 +38,25 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: Directory.Build.props
+          sparse-checkout-cone-mode: false
+      - id: version
+        run: echo "value=$(grep -oP '(?<=<Version>)[^<]+' Directory.Build.props)" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
           path: packages
           merge-multiple: true
       - run: sha256sum * > SHA256SUMS.txt
         working-directory: packages
-      - run: gh release create "build-${{ github.run_number }}" packages/* --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "Albion Meter build ${{ github.run_number }}" --generate-notes --latest
+      - name: Publish release v${{ steps.version.outputs.value }}
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: v${{ steps.version.outputs.value }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$TAG" packages/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" packages/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Albion Meter $TAG" --generate-notes --latest
+          fi

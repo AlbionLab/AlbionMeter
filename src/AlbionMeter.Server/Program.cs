@@ -1,7 +1,10 @@
 using System.Diagnostics;
 using System.Net;
+using System.Reflection;
 using AlbionMeter.Server;
 using Microsoft.AspNetCore.SignalR;
+
+var version = typeof(MeterSession).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.0.0";
 
 static int PortInUse()
 {
@@ -66,7 +69,7 @@ app.Use(async (context, next) =>
 });
 app.UseDefaultFiles();
 app.UseStaticFiles();
-app.MapGet("/api/health", (MeterSession session) => new { status = "ok", version = "0.1.0", captureAvailable = session.Snapshot().Mode == "live", packetCaptureImplemented = true, source = session.Snapshot().Mode, executable = Environment.ProcessPath, platform = OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsLinux() ? "linux" : "other", transport = "SignalR", storage = "SQLite" });
+app.MapGet("/api/health", (MeterSession session) => new { status = "ok", version, captureAvailable = session.Snapshot().Mode == "live", packetCaptureImplemented = true, source = session.Snapshot().Mode, executable = Environment.ProcessPath, platform = OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsLinux() ? "linux" : "other", transport = "SignalR", storage = "SQLite" });
 app.MapGet("/api/session", (MeterSession session) => session.Snapshot());
 app.MapGet("/api/encounters", (EncounterStore store) => store.List());
 app.MapGet("/api/encounters/{id}", (string id, EncounterStore store) => store.Get(id) is { } json
@@ -166,7 +169,7 @@ app.Lifetime.ApplicationStarted.Register(() =>
     var storage = app.Configuration["Storage:Directory"] ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AlbionMeter");
     Console.WriteLine();
     Console.WriteLine("  ==============================================");
-    Console.WriteLine("   Albion Meter v0.1.0 is running");
+    Console.WriteLine($"   Albion Meter v{version} is running");
     Console.WriteLine();
     Console.WriteLine($"   Open in your browser:  {address.TrimEnd('/')}/");
     Console.WriteLine();

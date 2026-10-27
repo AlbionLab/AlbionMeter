@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -7,11 +7,13 @@ const runtime = process.argv[2];
 if (!['win-x64', 'linux-x64'].includes(runtime)) throw new Error('Usage: node scripts/publish.mjs win-x64|linux-x64');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const output = `artifacts/${runtime}`;
-const archive = `artifacts/AlbionMeter-0.1.0-${runtime}${runtime === 'win-x64' ? '.zip' : '.tar.gz'}`;
+const version = /<Version>([^<]+)<\/Version>/.exec(readFileSync(`${root}Directory.Build.props`, 'utf8'))?.[1];
+if (!version) throw new Error('Directory.Build.props has no <Version>.');
+const archive = `artifacts/AlbionMeter-${version}-${runtime}${runtime === 'win-x64' ? '.zip' : '.tar.gz'}`;
 const windows = runtime === 'win-x64';
 const executable = windows ? 'AlbionMeter.Server.exe' : './AlbionMeter.Server';
 const readme = [
-  `Albion Meter 0.1.0 - ${windows ? 'Windows x64' : 'Linux x64'}`,
+  `Albion Meter ${version} - ${windows ? 'Windows x64' : 'Linux x64'}`,
   'https://albionlab.app - tutorial: https://albionlab.app/tutorial',
   '',
   '== English ==',

@@ -4,5 +4,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Version>0.1.0</Version>
+    <Product>Albion Meter</Product>
+    <Company>AlbionLab</Company>
+    <Authors>AlbionLab</Authors>
+    <Copyright>AlbionLab</Copyright>
+    <Description>Damage and healing meter for Albion Online</Description>
   </PropertyGroup>
 </Project>

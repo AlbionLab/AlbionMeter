@@ -1,0 +1,76 @@
+using System.Buffers.Binary;
+using System.Text;
+using AlbionMeter.Core.Capture;
+
+internal static class ManualRecordingChecks
+{
+    public static void Run(Action<string, Action> test, Action<bool> check)
+    {
+        test("Manual recording ignores pre-Play hits, preserves Pause/Resume and resets after Stop", () =>
+        {
+            void Assert(bool condition, [System.Runtime.CompilerServices.CallerLineNumber] int line = 0) { if (!condition) throw new Exception($"Manual record assertion at line {line}"); }
+            var analysis = new CaptureAnalysis(manualRecording: true);
+            analysis.BeginCapture(1_000_000);
+            var sequence = 0u;
+            void Send(byte kind, Dictionary<byte, object?> values, long at) => analysis.Add(Frame(kind, values, at, ++sequence));
+            var character = Guid.NewGuid();
+            Send(3, new() { [253] = (byte)2, [0] = 10, [1] = character.ToByteArray(), [2] = "Alpha", [8] = "@RANDOMDUNGEON@one", [66] = "1315" }, 1_100_000);
+            void Hit(float delta, long at) => Send(4, new() { [252] = (byte)6, [0] = 30, [6] = 10, [2] = delta, [7] = -1, [5] = (byte)0 }, at);
+            Hit(-900, 1_200_000);
+            Assert(analysis.RecordState == "idle" && analysis.Snapshot().Combat!.TotalDamage == 0 && analysis.Snapshot().Dungeons!.Length == 0);
+            analysis.StartRecord(2_000_000);
+            var id = analysis.Snapshot().Combat!.Id;
+            Assert(analysis.Snapshot().Dungeons!.Length == 1);
+            Hit(-100, 3_000_000); Hit(40, 4_000_000);
+            analysis.SetPaused(true, 5_000_000);
+            Hit(-900, 6_000_000);
+            Assert(analysis.RecordState == "paused" && analysis.Snapshot().Combat!.TotalDamage == 100 && analysis.Snapshot().Combat!.ElapsedSeconds == 3);
+            analysis.SetPaused(false, 8_000_000); Hit(-25, 9_000_000);
+            Assert(analysis.Snapshot().Combat!.Id == id && analysis.Snapshot().Combat!.TotalDamage == 125 && analysis.Snapshot().Combat!.TotalHealing == 40);
+            var dungeon = analysis.Snapshot().Dungeons!.Single();
+            analysis.StopRecord(10_000_000); Hit(-500, 11_000_000);
+            Assert(analysis.RecordState == "completed" && analysis.Snapshot().Combat!.TotalDamage == 125 && analysis.Snapshot().Combat!.ElapsedSeconds == 5);
+            Assert(analysis.Snapshot().Dungeons!.Single().Totals.TotalDamage == 125);
+            analysis.StartRecord(12_000_000);
+            var next = analysis.Snapshot();
+            Assert(next.Combat!.Id != id && next.Combat.TotalDamage == 0 && next.Combat.TotalHealing == 0 && next.Combat.EventCount == 0 && next.Combat.ElapsedSeconds == 0);
+            Assert(next.Combat.Timeline.All(point => point.Damage.Values.Sum() == 0 && point.Healing.Values.Sum() == 0) && next.Combat.ItemContributions!.Length == 0 && next.Combat.WeaponContributions!.Length == 0);
+            Assert(next.Dungeons!.Single().Id != dungeon.Id && next.Dungeons!.Single().Totals.TotalDamage == 0);
+            Hit(-10, 13_000_000);
+            Assert(analysis.Snapshot().Combat!.TotalDamage == 10 && analysis.Snapshot().Combat!.TotalHealing == 0 && analysis.Snapshot().Dungeons!.Single().Totals.TotalDamage == 10);
+        });
+    }
+    private static CaptureFrame Frame(byte kind, Dictionary<byte, object?> values, long at, uint sequence)
+    {
+        using var stream = new MemoryStream(); using var writer = new BinaryWriter(stream);
+        writer.Write((byte)0xf3); writer.Write(kind); writer.Write((byte)1);
+        if (kind == 3) { writer.Write((short)0); writer.Write((byte)8); }
+        writer.Write((byte)values.Count);
+        foreach (var (key, value) in values)
+        {
+            writer.Write(key);
+            switch (value)
+            {
+                case byte number: writer.Write((byte)3); writer.Write(number); break;
+                case int number: writer.Write((byte)9); Var(writer, (uint)((number << 1) ^ (number >> 31))); break;
+                case float number: writer.Write((byte)5); writer.Write(number); break;
+                case byte[] bytes: writer.Write((byte)67); Var(writer, (uint)bytes.Length); writer.Write(bytes); break;
+                case string text: var encoded = Encoding.UTF8.GetBytes(text); writer.Write((byte)7); Var(writer, (uint)encoded.Length); writer.Write(encoded); break;
+                default: throw new InvalidOperationException();
+            }
+        }
+        var payload = stream.ToArray(); var packet = new byte[20 + 8 + 24 + payload.Length];
+        packet[0] = 0x45; packet[9] = 17; BinaryPrimitives.WriteUInt16BigEndian(packet.AsSpan(2), (ushort)packet.Length);
+        packet[12] = 192; packet[15] = 1; packet[16] = 192; packet[19] = 2;
+        BinaryPrimitives.WriteUInt16BigEndian(packet.AsSpan(20), 5056); BinaryPrimitives.WriteUInt16BigEndian(packet.AsSpan(22), 12345);
+        BinaryPrimitives.WriteUInt16BigEndian(packet.AsSpan(24), (ushort)(packet.Length - 20));
+        packet[31] = 1; packet[39] = 1; packet[40] = 6;
+        BinaryPrimitives.WriteUInt32BigEndian(packet.AsSpan(44), (uint)(12 + payload.Length)); BinaryPrimitives.WriteUInt32BigEndian(packet.AsSpan(48), sequence);
+        payload.CopyTo(packet, 52); return new(at, (uint)packet.Length, 101, packet);
+    }
+    private static void Var(BinaryWriter writer, uint value)
+    {
+        while (value >= 128) { writer.Write((byte)((value & 127) | 128)); value >>= 7; }
+        writer.Write((byte)value);
+    }
+}

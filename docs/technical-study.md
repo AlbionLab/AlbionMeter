@@ -1,0 +1,10 @@
+
+## Dungeon grouping and game catalogs
+
+The reference implementation uses cluster identity and prior/current cluster GUIDs to attach newly visited clusters to an existing dungeon. This is distinct from grouping by display name. See [DungeonController](https://github.com/Triky313/AlbionOnline-StatisticsAnalysis/blob/main/src/StatisticsAnalysisTool/Dungeon/DungeonController.cs), particularly AddDungeonAsync and AddClusterToExistDungeon. Special activities have different run boundaries. Our current domain preserves floor identity and distinct run identity, but the demonstration manually supplies transitions; automatic activity-specific boundaries are not implemented yet.
+
+[ClusterController](https://github.com/Triky313/AlbionOnline-StatisticsAnalysis/blob/main/src/StatisticsAnalysisTool/Cluster/ClusterController.cs) and [WorldData](https://github.com/Triky313/AlbionOnline-StatisticsAnalysis/blob/main/src/StatisticsAnalysisTool/GameFileData/WorldData.cs) separate cluster indices, instance identity and readable names. Dynamic random dungeon identifiers do not guarantee a unique readable dungeon name. Therefore our records retain the entrance map and instance identity separately, and floor numbering means discovery order.
+
+The local game contains GameData/cluster/world.bin, GameData/items.bin and GameData/localization.bin. The importer decodes DES-CBC then GZIP/XML using the file format documented by the reference extractor. It selects direct world/clusters/cluster definitions rather than nested references. Combat weapon and transformationweapon definitions provide unique names, shopsubcategory1, tier and slottype; localization TMX supplies English display names. No role classifier is used. The exported catalog has 706 combat weapon definitions across tiers, not 706 distinct weapon families.
+
+Only world.bin is copied as an original binary asset. Item and localization data are normalized into the catalog. Browser folder import uploads only the relevant binaries to the loopback server; it does not upload the entire installation. Existing local game files are never modified.

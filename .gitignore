@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+web/node_modules/
+src/AlbionMeter.Server/wwwroot/
+artifacts/
+.local/
+*.db
+*.db-shm
+*.db-wal
+.dev/

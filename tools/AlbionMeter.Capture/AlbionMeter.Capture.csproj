@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../../src/AlbionMeter.Core/AlbionMeter.Core.csproj" /></ItemGroup>
+  <ItemGroup><Content Include="../../assets/game-data/combat.json" Link="assets/combat.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" /></ItemGroup>
+</Project>

@@ -1,0 +1,22 @@
+{
+  "name": "albion-meter-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit && node build.mjs",
+    "test": "node tests/state.mjs"
+  },
+  "dependencies": {
+    "@microsoft/signalr": "10.0.11",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.15",
+    "@types/react-dom": "19.2.3",
+    "esbuild": "0.25.0",
+    "playwright": "1.63.0",
+    "typescript": "5.9.3"
+  }
+}

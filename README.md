@@ -1,41 +1,87 @@
-# Albion Meter
+<p align="center">
+  <a href="https://albionlab.app"><img src="docs/images/logo.png" alt="Albion Meter" width="128" height="128"></a>
+</p>
 
-Damage and healing meter for Albion Online. It runs on your own computer, observes the network traffic the game client already receives and shows live DPS and HPS for your party. It never reads the game's memory, never changes the client and never sends anything to the game servers.
+<h1 align="center">Albion Meter</h1>
 
-The interface is a local page served by the program at http://127.0.0.1:5187.
+<p align="center">
+  Free damage and healing meter for Albion Online, made by <a href="https://albionlab.app"><b>AlbionLab</b></a>.
+</p>
+
+<p align="center">
+  <a href="https://albionlab.app">albionlab.app</a> ·
+  <a href="https://albionlab.app/#download">Download</a> ·
+  <a href="https://albionlab.app/tutorial">Tutorial</a> ·
+  <a href="https://albionlab.app/sessions">Public sessions</a> ·
+  <a href="https://discord.gg/pAWsSxN5X2">Discord</a>
+</p>
+
+<p align="center">
+  <img src="docs/images/meter-damage.png" alt="Albion Meter recording an 18-player dungeon with the damage bars" width="820">
+</p>
+
+Albion Meter runs on your own computer, observes the network traffic the game client already receives and shows live DPS and HPS for your whole party. It never reads the game's memory, never changes the client and never sends anything to the game servers. The interface is a local page served by the program at `http://127.0.0.1:5187`.
+
+## AlbionLab
+
+[**AlbionLab**](https://albionlab.app) is the home of Albion Meter. Connect the meter to your account once (sign in with Discord and approve the code the meter shows) and every record becomes a live session on the site, updated every second while you play:
+
+- the full analysis: timeline, interval analysis, damage and healing by item and ability, each player's weapons and gear;
+- every dungeon split by floor, with its own totals and progression;
+- a link to share with your party, with visibility **Unlisted**, **Public** or **Private** and the option to hide the other players' names;
+- public sessions from every player at [albionlab.app/sessions](https://albionlab.app/sessions).
+
+The dungeon location is never shared unless you turn it on. Connecting is optional: the meter works fully offline.
+
+<p align="center">
+  <img src="docs/images/albionlab-raid.png" alt="A real 18-player dungeon on AlbionLab: top players, totals and party DPS by floor" width="820">
+</p>
+
+<p align="center">
+  <img src="docs/images/albionlab.png" alt="AlbionLab home page" width="820">
+</p>
 
 ## Features
 
-- Live damage and healing bars for the party, with DPS/HPS and share of each player.
-- Play, Pause, Resume, Stop and Reset of a record.
-- Copy the ranking as chat text or as an image.
+- Live damage and healing bars for the party, with total, share and DPS/HPS for each player.
+- **Play**, **Pause**, **Resume**, **Stop** and **Reset** of a record.
+- Copy the ranking as chat text (`1. Name: 1305001(13,0%)|370,88 DPS`) or as an image.
 - Capture through the system socket (no driver needed) or Npcap (Windows) / libpcap (Linux), on any network interface.
-- Weapon, item and map names imported from your own game installation.
-- Optional publishing of each record as a live session on [albionlab.app](https://albionlab.app), with the full analysis.
+- Weapon, item and map names imported from your own game installation, so they always match your game version.
+- Optional live publishing to [AlbionLab](https://albionlab.app).
 
-## Requirements
+| Healing | Game data |
+| --- | --- |
+| <img src="docs/images/meter-healing.png" alt="Healing bars"> | <img src="docs/images/meter-game-data.png" alt="Game catalog imported from the game installation"> |
 
-- .NET SDK 10 and Node.js 24 to build.
-- Windows 10/11 (64-bit) or 64-bit Linux to run.
+<p align="center">
+  <img src="docs/images/meter-capture.png" alt="Capture tab with method, interface and live counters" width="820">
+</p>
 
-## Run from source
+## Getting started
+
+Download the latest version at [albionlab.app](https://albionlab.app/#download) and follow the [step-by-step tutorial](https://albionlab.app/tutorial). In short:
+
+1. Open Albion Meter (accept the administrator prompt on Windows) and go to `http://127.0.0.1:5187`.
+2. **Game data** → **Import game folder** → choose the folder that contains `Albion-Online_Data`.
+3. **Capture** → keep **System socket**, pick your network interface → **Start capture**.
+4. Optionally, **Connect account** in the AlbionLab card.
+5. **Meter** → **Play**, then fight.
+
+## Build from source
+
+Requirements: .NET SDK 10 and Node.js 24.
 
 ```bash
 npm ci --prefix web
 node scripts/dev.mjs
 ```
 
-The script builds the interface and the server, then starts the meter. On Linux it asks once for the `cap_net_raw` capability after every build; on Windows the program asks for administrator rights.
-
-Then:
-
-1. **Game data** → **Import game folder** → choose the folder that contains `Albion-Online_Data`.
-2. **Capture** → choose the method and interface → **Start capture**.
-3. **Meter** → **Play**.
+The script builds the interface and the server, then starts the meter. On Linux it asks for the `cap_net_raw` capability after every build; on Windows the program asks for administrator rights.
 
 Records are stored in `encounters.db` inside the user's local data folder (`AlbionMeter`). Use `--Storage:Directory=<path>` to choose another folder.
 
-## Configuration
+### Configuration
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -46,14 +92,14 @@ Records are stored in `encounters.db` inside the user's local data folder (`Albi
 
 Settings can be passed as arguments (`--Capture:AutoStart=true`) or environment variables (`Capture__AutoStart=true`).
 
-## Tests
+### Tests
 
 ```bash
 dotnet run --project tests/AlbionMeter.Tests
 npm test --prefix web
 ```
 
-## Packages
+### Packages
 
 ```bash
 node scripts/publish.mjs win-x64
@@ -62,12 +108,18 @@ node scripts/publish.mjs linux-x64
 
 Each command publishes a self-contained build to `artifacts/<runtime>` and creates the matching `.zip` or `.tar.gz` package.
 
-## Layout
+### Layout
 
 - `src/AlbionMeter.Core` — packet capture, Photon decoding, combat observation and aggregation.
-- `src/AlbionMeter.Server` — local server, record controls, history, AlbionLab publishing.
+- `src/AlbionMeter.Server` — local server, record controls, history and AlbionLab publishing.
 - `web` — the meter interface (React + TypeScript).
 - `tests` — C# checks.
 - `tools` — capture inspection and game data import command-line tools.
 - `assets/game-data` — combat and map catalogs generated from the game data.
 - `docs` — protocol and capture notes.
+
+## Community
+
+Questions, bugs and ideas: join the [AlbionLab Discord](https://discord.gg/pAWsSxN5X2).
+
+Albion Meter is a community project and is not affiliated with or endorsed by Sandbox Interactive. Albion Online is a trademark of Sandbox Interactive GmbH.

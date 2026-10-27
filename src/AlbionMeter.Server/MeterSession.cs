@@ -33,7 +33,7 @@ public sealed class MeterSession(EncounterStore store, MapCatalog? catalog = nul
         DungeonLocation? ResolveLocation(DungeonLocation? location) => location is null ? null : location with
         {
             EntranceMapName = catalog?.ResolveName(location.EntranceMapId) ?? location.EntranceMapName,
-            MapName = catalog?.Find(location.MapId)?.Name ?? location.MapName
+            MapName = catalog?.Find(location.MapId)?.Name ?? catalog?.Find(location.MapName)?.Name ?? location.MapName
         };
         CombatSnapshot ResolveSnapshot(CombatSnapshot snapshot)
         {
@@ -57,6 +57,7 @@ public sealed class MeterSession(EncounterStore store, MapCatalog? catalog = nul
             Totals = ResolveSnapshot(run.Totals) with { Location = null },
             Floors = run.Floors.Select(floor => floor with
             {
+                MapName = catalog?.Find(floor.MapName)?.Name ?? floor.MapName,
                 Totals = ResolveSnapshot(floor.Totals), Encounters = floor.Encounters.Select(ResolveSnapshot).ToArray()
             }).ToArray()
         }).ToArray();

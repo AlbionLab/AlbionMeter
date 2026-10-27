@@ -388,6 +388,24 @@ Test("Random dungeons and expeditions, hardcore included, are recorded as dungeo
     True(AlbionMeter.Core.Observation.DungeonCombatObservation.Kind("1316") == null);
     True(AlbionMeter.Core.Observation.DungeonCombatObservation.Kind("@ISLAND@1f2e3d4c") == null);
 });
+Test("Every expedition entry is its own run named by its template", () =>
+{
+    var character = Guid.NewGuid();
+    var observation = new AlbionMeter.Core.Observation.DungeonCombatObservation();
+    var timestamp = 1_000_000L;
+    void Enter(string map, string template)
+    {
+        var outside = new AlbionMeter.Core.Observation.LocalCharacterSnapshot(character, 1, "KPey", null, null, "1301", null, "observed", timestamp, "zone");
+        observation.Observe(new(3, 0, 0, new() { [0] = map, [1] = template, [253] = 41 }), "zone", "zone:1", timestamp += 1_000_000, outside, null);
+        var inside = outside with { MapId = map, ObservedAtMicroseconds = timestamp += 1_000_000 };
+        observation.Observe(new(3, 0, 0, new() { [1] = character.ToByteArray(), [8] = map, [66] = "1301", [253] = 2 }), "zone", "zone:2", timestamp, inside, null);
+    }
+    Enter("@EXPEDITION@84fb7dda-9fab-4aa3-a98d-05252b177b0c", "Mine-SOLO");
+    Enter("@EXPEDITION@1a2b3c4d-9fab-4aa3-a98d-05252b177b0c", "Mine-SOLO");
+    var runs = observation.Snapshot();
+    Equal(2, runs.Length);
+    True(runs.All(run => run.Name == "Expedition" && run.Floors.Length == 1 && run.Floors[0].MapName == "Mine-SOLO"));
+});
 Test("Dungeon checkpoints replace totals and revisits preserve floor identity", () =>
 {
     var run = new DungeonRun("Test dungeon", "1207", "Birchcopse", "live");

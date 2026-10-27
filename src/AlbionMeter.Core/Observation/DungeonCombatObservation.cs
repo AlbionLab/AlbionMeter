@@ -19,6 +19,7 @@ public sealed class DungeonCombatObservation(CombatSourceCatalog? sources = null
     private (Guid Character, string Map, string Entrance)? _lastLocation;
     private sealed record Arrival(WireMessage Message, string Connection, string Identity, long Timestamp, bool Paused);
     private readonly List<Arrival> _arrivals = [];
+    private readonly Dictionary<string, string> _templates = [];
     private string? _zoneConnection;
     private long? _transitionAt;
     private const int MaximumArrivals = 8192;
@@ -43,7 +44,7 @@ public sealed class DungeonCombatObservation(CombatSourceCatalog? sources = null
         _character = location.Character; _map = location.Map;
         _active = new(Kind(location.Map)!, location.Entrance, location.Entrance, "live", Identity($"{recordId}:{location.Character}:{location.Map}"), DateTimeOffset.FromUnixTimeMilliseconds(timestamp / 1000));
         _runs.Add((location.Character, location.Entrance, _active));
-        _active.EnterFloor(location.Map, location.Map, Kind(location.Map)!);
+        _active.EnterFloor(location.Map, location.Map, FloorName(location.Map));
         _combat.BeginSession(timestamp, Identity($"{_active.Id}:{timestamp}"));
     }
     private long _lastFrame;
@@ -53,11 +54,20 @@ public sealed class DungeonCombatObservation(CombatSourceCatalog? sources = null
         : map.StartsWith("@RANDOMDUNGEON@", StringComparison.OrdinalIgnoreCase) ? "Random dungeon"
         : map.StartsWith("@EXPEDITION@", StringComparison.OrdinalIgnoreCase) ? "Expedition"
         : null;
+    private string FloorName(string map) => _templates.GetValueOrDefault(map) ?? Kind(map)!;
     private static string Identity(string value) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)))[..32];
     private long Bounded(long timestamp) => _lastFrame > 0 && timestamp - _lastFrame > CaptureGapMicroseconds ? _lastFrame : timestamp;
 
     public void Observe(WireMessage wire, string connection, string identity, long timestamp, LocalCharacterSnapshot? local, PartyRosterSnapshot? party)
     {
+        if (wire.Kind == 3 && wire.ReturnCode == 0 && wire.Parameters.GetValueOrDefault((byte)253) is byte or short or int or long
+            && Convert.ToInt64(wire.Parameters[(byte)253]) == 41
+            && wire.Parameters.GetValueOrDefault((byte)0) is string destination && IsDungeon(destination)
+            && wire.Parameters.GetValueOrDefault((byte)1) is string template && !string.IsNullOrWhiteSpace(template))
+        {
+            if (_templates.Count >= 256) _templates.Clear();
+            _templates[destination] = template;
+        }
         var join = wire.Kind == 3 && wire.ReturnCode == 0 && wire.Parameters.GetValueOrDefault((byte)253) is byte or short or int or long
             && Convert.ToInt64(wire.Parameters[(byte)253]) == 2
             && local is { LocationState: "observed", MapId: not null }
@@ -123,13 +133,13 @@ public sealed class DungeonCombatObservation(CombatSourceCatalog? sources = null
         if (string.IsNullOrWhiteSpace(entrance) || IsDungeon(entrance)) entrance = _outsideMap ?? "unknown";
         var known = _runs.FirstOrDefault(entry => entry.Character == local.CharacterId && entry.Run.ContainsFloor(_map!));
         if (known.Run is not null) _active = known.Run;
-        else if (_active is null || !IsDungeon(previousMap) || _runs.First(entry => entry.Run == _active).Entrance != entrance)
+        else if (_active is null || !IsDungeon(previousMap) || Kind(_map) == "Expedition" || _runs.First(entry => entry.Run == _active).Entrance != entrance)
         {
             if (_runs.Count >= 100) _runs.RemoveAt(0);
             _active = new(Kind(_map)!, entrance, entrance, "live", Identity(_recordId is null ? $"{local.CharacterId}:{_map}" : $"{_recordId}:{local.CharacterId}:{_map}"), DateTimeOffset.FromUnixTimeMilliseconds(timestamp / 1000));
             _runs.Add((local.CharacterId, entrance, _active));
         }
-        _active.EnterFloor(_map!, _map!, Kind(_map)!);
+        _active.EnterFloor(_map!, _map!, FloorName(_map!));
         _combat.BeginSession(arrivals.Length > 0 ? arrivals.Min(arrival => arrival.Timestamp) : timestamp, Identity($"{_active.Id}:{_map}:{timestamp}"));
         foreach (var arrival in arrivals) ReplayArrival(arrival, local, party);
         _combat.SetPaused(_paused, timestamp);

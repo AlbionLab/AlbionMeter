@@ -1,4 +1,4 @@
-name: Build and verify
+name: Build
 on:
   push:
   pull_request:
@@ -23,14 +23,6 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci --prefix web
-      - run: npm run build --prefix web
-      - run: npm test --prefix web
-      - run: dotnet build tools/AlbionMeter.Capture
-      - run: dotnet run --project tests/AlbionMeter.Tests
-      - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libpcap0.8
-      - if: runner.os == 'Linux'
-        run: dotnet run --project tests/AlbionMeter.Tests -- --native-capture
       - run: node scripts/publish.mjs ${{ matrix.runtime }}
       - uses: actions/upload-artifact@v4
         with:

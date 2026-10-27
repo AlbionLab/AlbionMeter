@@ -157,7 +157,8 @@ app.MapPost("/api/albionlab/location", (AlbionLabSettingsRequest request, Albion
 app.MapPost("/api/albionlab/session", async (AlbionLabSessionRequest request, AlbionLabService albionLab, CancellationToken cancellation) =>
 {
     if (request.Visibility is not (null or "private" or "unlisted" or "public")) return Results.BadRequest(new { error = "Unknown visibility." });
-    try { return Results.Ok(await albionLab.UpdateSession(request.Visibility, request.Anonymize, cancellation)); }
+    if (request.Title is { Length: > 80 }) return Results.BadRequest(new { error = "The name is limited to 80 characters." });
+    try { return Results.Ok(await albionLab.UpdateSession(request.Title, request.Visibility, request.Anonymize, cancellation)); }
     catch (HttpRequestException exception) { return Results.Json(new { error = $"AlbionLab is unreachable: {exception.Message}" }, statusCode: StatusCodes.Status502BadGateway); }
 });
 app.MapHub<MeterHub>("/stream");

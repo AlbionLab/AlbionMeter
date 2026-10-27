@@ -640,3 +640,7 @@ dd { margin: 0; color: var(--text-2); font-family: var(--mono); font-size: 12px;
 .ui-select-list li[data-active="true"] { background: var(--surface-3); color: var(--text); }
 .ui-select-list li[aria-selected="true"] { color: var(--accent); font-weight: 600; }
 .ui-select-list li[aria-disabled="true"] { opacity: 0.4; cursor: not-allowed; }
+
+.albionlab-name { width: 100%; }
+.albionlab-name input { flex: 1; max-width: 420px; height: 32px; padding: 0 11px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; }
+.albionlab-name input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(249, 135, 20, 0.16); }

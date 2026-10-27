@@ -11,7 +11,7 @@ namespace AlbionMeter.Server;
 
 public sealed record AlbionLabAccount(string Name, string AvatarUrl);
 public sealed record AlbionLabPairing(string Code, string VerifyUrl, DateTimeOffset ExpiresAt);
-public sealed record AlbionLabSession(string Id, string Url, string Visibility, bool Anonymize, string State, string? Error, DateTimeOffset? PublishedAt);
+public sealed record AlbionLabSession(string Id, string Url, string Visibility, bool Anonymize, string State, string? Error, DateTimeOffset? PublishedAt, string? Title = null);
 public sealed record AlbionLabStatus(string Server, bool Connected, AlbionLabAccount? Account, AlbionLabPairing? Pairing, string? PairingError, AlbionLabSession? Session, bool ShareLocation, string Visibility, bool Anonymize);
 
 public sealed class AlbionLabService(IConfiguration configuration, MeterSession meter, CaptureService capture, CombatSourceCatalog sources, ILogger<AlbionLabService> logger) : BackgroundService
@@ -99,7 +99,7 @@ public sealed class AlbionLabService(IConfiguration configuration, MeterSession 
         return Status();
     }
 
-    public async Task<AlbionLabStatus> UpdateSession(string? visibility, bool? anonymize, CancellationToken cancellation)
+    public async Task<AlbionLabStatus> UpdateSession(string? title, string? visibility, bool? anonymize, CancellationToken cancellation)
     {
         lock (gate)
         {
@@ -109,13 +109,13 @@ public sealed class AlbionLabService(IConfiguration configuration, MeterSession 
         }
         var (token, current) = (Current.DeviceToken, session);
         if (token is null || current is not { Id.Length: > 0 }) return Status();
-        using var request = new HttpRequestMessage(HttpMethod.Patch, $"{server}/api/sessions/{current.Id}") { Content = JsonContent.Create(new { visibility, anonymize }) };
+        using var request = new HttpRequestMessage(HttpMethod.Patch, $"{server}/api/sessions/{current.Id}") { Content = JsonContent.Create(new { title, visibility, anonymize }) };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         using var response = await http.SendAsync(request, cancellation);
         if (response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellation);
-            lock (gate) session = current with { Visibility = body.GetProperty("visibility").GetString()!, Anonymize = body.GetProperty("anonymize").GetBoolean() };
+            lock (gate) session = current with { Visibility = body.GetProperty("visibility").GetString()!, Anonymize = body.GetProperty("anonymize").GetBoolean(), Title = body.TryGetProperty("title", out var named) && named.ValueKind == JsonValueKind.String ? named.GetString() : null };
         }
         return Status();
     }
@@ -306,4 +306,4 @@ public sealed class AlbionLabService(IConfiguration configuration, MeterSession 
 }
 
 public sealed record AlbionLabSettingsRequest(bool ShareLocation);
-public sealed record AlbionLabSessionRequest(string? Visibility, bool? Anonymize);
+public sealed record AlbionLabSessionRequest(string? Visibility, bool? Anonymize, string? Title = null);

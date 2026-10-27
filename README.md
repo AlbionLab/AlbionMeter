@@ -43,6 +43,14 @@ Albion Meter runs on your own computer, observes the network traffic the game cl
 The dungeon location is never shared unless you turn it on. Connecting is optional: the meter works fully offline.
 
 <p align="center">
+  <img src="docs/images/albionlab-session.png" alt="The same 18-player dungeon as a session on AlbionLab: totals, per-second timeline and interval analysis" width="820">
+</p>
+
+<p align="center">
+  <img src="docs/images/albionlab-players.png" alt="Players and equipment on AlbionLab: each player's weapon, damage, healing, DPS and HPS" width="820">
+</p>
+
+<p align="center">
   <img src="docs/images/albionlab-raid.png" alt="A real 18-player dungeon on AlbionLab: top players, totals and party DPS by floor" width="820">
 </p>
 

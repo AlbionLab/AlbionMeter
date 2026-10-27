@@ -172,7 +172,7 @@ public sealed class AlbionLabService(IConfiguration configuration, MeterSession 
         if (record.Id != recordId)
         {
             if (recordId is not null) await FinishPrevious(token, cancellation);
-            if (record.Status == "completed" || record.TotalDamage + record.TotalHealing <= 0) return;
+            if (record.Status == "completed") return;
             await CreateSession(token, record, cancellation);
         }
         var connection = await Hub(token, cancellation);

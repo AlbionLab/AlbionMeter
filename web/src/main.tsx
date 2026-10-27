@@ -89,8 +89,8 @@ function AlbionLabCard({ recording }: { recording: boolean }) {
         </div>
         {session.error && <p className="albionlab-error">{session.error}</p>}
       </> : <div className="albionlab-session">
-        <span className="publish-state"><i />{recording ? 'Waiting for the first hit' : 'No live session'}</span>
-        <span className="muted">{recording ? 'The session is created on AlbionLab as soon as the fight starts.' : 'Press Play: once the fight starts, the record becomes a live session.'}</span>
+        <span className="publish-state"><i />{recording ? 'Creating the session…' : 'No live session'}</span>
+        <span className="muted">{recording ? 'The live session on AlbionLab is being created.' : 'Press Play: each record becomes a new live session on AlbionLab, and Stop ends it.'}</span>
         <a className="button secondary" href={`${status.server}/account`} target="_blank" rel="noreferrer">My sessions</a>
       </div>}
       <div className="albionlab-options">

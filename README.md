@@ -18,6 +18,14 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/AlbionLab/AlbionMeter/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/AlbionLab/AlbionMeter?style=for-the-badge&label=release&labelColor=1E2126&color=F98714"></a>
+  <a href="https://github.com/AlbionLab/AlbionMeter/releases"><img alt="GitHub downloads" src="https://img.shields.io/github/downloads/AlbionLab/AlbionMeter/total?style=for-the-badge&label=downloads&labelColor=1E2126&color=EF476F"></a>
+  <a href="https://github.com/AlbionLab/AlbionMeter/actions/workflows/build.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/AlbionLab/AlbionMeter/build.yml?branch=main&style=for-the-badge&label=build&labelColor=1E2126"></a>
+  <a href="https://discord.gg/pAWsSxN5X2"><img alt="Discord" src="https://img.shields.io/discord/1563966378002878655?style=for-the-badge&logo=discord&logoColor=7289da&label=discord&labelColor=1E2126&color=7289da"></a>
+  <a href="https://albionlab.app"><img alt="albionlab.app" src="https://img.shields.io/badge/albionlab.app-sessions%20%26%20analysis-F98714?style=for-the-badge&labelColor=1E2126"></a>
+</p>
+
+<p align="center">
   <img src="docs/images/meter-damage.png" alt="Albion Meter recording an 18-player dungeon with the damage bars" width="820">
 </p>
 

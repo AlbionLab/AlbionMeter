@@ -98,7 +98,7 @@ app.MapGet("/api/character", (CaptureService capture, CharacterContextStore cont
         ? status.Source == "replay" ? "replay" : status.State == "running" && status.Report?.FirstTimestampMicroseconds is { } started && current.ObservedAtMicroseconds >= started ? "live-capture" : "last-observed"
         : character is not null ? "last-observed" : "none";
     string? Name(string? mapId) => mapId is null ? null : catalog.Find(mapId)?.Name
-        ?? (mapId.Contains("@RANDOMDUNGEON@", StringComparison.OrdinalIgnoreCase) ? "Random dungeon" : mapId.StartsWith("@ISLAND@", StringComparison.OrdinalIgnoreCase) ? "Player island" : mapId);
+        ?? AlbionMeter.Core.Observation.DungeonCombatObservation.Kind(mapId) ?? (mapId.StartsWith("@ISLAND@", StringComparison.OrdinalIgnoreCase) ? "Player island" : mapId);
     return Results.Ok(new
     {
         source, captureState = status.State,

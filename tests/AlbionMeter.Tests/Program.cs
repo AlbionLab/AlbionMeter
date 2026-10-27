@@ -381,6 +381,13 @@ Test("History content is parameterized by encounter identity", () =>
 {
     True(store.Get("' OR 1=1 --") == null);
 });
+Test("Random dungeons and expeditions, hardcore included, are recorded as dungeon runs", () =>
+{
+    True(AlbionMeter.Core.Observation.DungeonCombatObservation.Kind("@RANDOMDUNGEON@6d8f0b2a-1c3e-4f5a-9b7d-2e4c6a8f0b1d") == "Random dungeon");
+    True(AlbionMeter.Core.Observation.DungeonCombatObservation.Kind("@EXPEDITION@88714a12-4a45-4081-80ec-4f48e5b76565") == "Expedition");
+    True(AlbionMeter.Core.Observation.DungeonCombatObservation.Kind("1316") == null);
+    True(AlbionMeter.Core.Observation.DungeonCombatObservation.Kind("@ISLAND@1f2e3d4c") == null);
+});
 Test("Dungeon checkpoints replace totals and revisits preserve floor identity", () =>
 {
     var run = new DungeonRun("Test dungeon", "1207", "Birchcopse", "live");

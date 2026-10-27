@@ -41,14 +41,18 @@ public sealed class DungeonCombatObservation(CombatSourceCatalog? sources = null
         _combat.BeginSession(timestamp);
         if (_lastLocation is not { } location || !IsDungeon(location.Map)) return;
         _character = location.Character; _map = location.Map;
-        _active = new("Random dungeon", location.Entrance, location.Entrance, "live", Identity($"{recordId}:{location.Character}:{location.Map}"), DateTimeOffset.FromUnixTimeMilliseconds(timestamp / 1000));
+        _active = new(Kind(location.Map)!, location.Entrance, location.Entrance, "live", Identity($"{recordId}:{location.Character}:{location.Map}"), DateTimeOffset.FromUnixTimeMilliseconds(timestamp / 1000));
         _runs.Add((location.Character, location.Entrance, _active));
-        _active.EnterFloor(location.Map, location.Map, "Random dungeon");
+        _active.EnterFloor(location.Map, location.Map, Kind(location.Map)!);
         _combat.BeginSession(timestamp, Identity($"{_active.Id}:{timestamp}"));
     }
     private long _lastFrame;
     private const long CaptureGapMicroseconds = 30_000_000;
-    private static bool IsDungeon(string? map) => map?.StartsWith("@RANDOMDUNGEON@", StringComparison.OrdinalIgnoreCase) == true;
+    private static bool IsDungeon(string? map) => Kind(map) is not null;
+    public static string? Kind(string? map) => map is null ? null
+        : map.StartsWith("@RANDOMDUNGEON@", StringComparison.OrdinalIgnoreCase) ? "Random dungeon"
+        : map.StartsWith("@EXPEDITION@", StringComparison.OrdinalIgnoreCase) ? "Expedition"
+        : null;
     private static string Identity(string value) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)))[..32];
     private long Bounded(long timestamp) => _lastFrame > 0 && timestamp - _lastFrame > CaptureGapMicroseconds ? _lastFrame : timestamp;
 
@@ -122,10 +126,10 @@ public sealed class DungeonCombatObservation(CombatSourceCatalog? sources = null
         else if (_active is null || !IsDungeon(previousMap) || _runs.First(entry => entry.Run == _active).Entrance != entrance)
         {
             if (_runs.Count >= 100) _runs.RemoveAt(0);
-            _active = new("Random dungeon", entrance, entrance, "live", Identity(_recordId is null ? $"{local.CharacterId}:{_map}" : $"{_recordId}:{local.CharacterId}:{_map}"), DateTimeOffset.FromUnixTimeMilliseconds(timestamp / 1000));
+            _active = new(Kind(_map)!, entrance, entrance, "live", Identity(_recordId is null ? $"{local.CharacterId}:{_map}" : $"{_recordId}:{local.CharacterId}:{_map}"), DateTimeOffset.FromUnixTimeMilliseconds(timestamp / 1000));
             _runs.Add((local.CharacterId, entrance, _active));
         }
-        _active.EnterFloor(_map!, _map!, "Random dungeon");
+        _active.EnterFloor(_map!, _map!, Kind(_map)!);
         _combat.BeginSession(arrivals.Length > 0 ? arrivals.Min(arrival => arrival.Timestamp) : timestamp, Identity($"{_active.Id}:{_map}:{timestamp}"));
         foreach (var arrival in arrivals) ReplayArrival(arrival, local, party);
         _combat.SetPaused(_paused, timestamp);

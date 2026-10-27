@@ -58,11 +58,34 @@ The dungeon location is never shared unless you turn it on. Connecting is option
   <img src="docs/images/meter-capture.png" alt="Capture tab with method, interface and live counters" width="820">
 </p>
 
+## What to install
+
+Albion Meter uses the .NET installed on your computer, so install these once before opening it.
+
+### Windows 10 / 11 (64-bit)
+
+| | What | Download |
+| --- | --- | --- |
+| Required | .NET Runtime 10 (x64) | [dotnet-runtime-win-x64.exe](https://aka.ms/dotnet/10.0/dotnet-runtime-win-x64.exe) |
+| Required | ASP.NET Core Runtime 10 (x64) | [aspnetcore-runtime-win-x64.exe](https://aka.ms/dotnet/10.0/aspnetcore-runtime-win-x64.exe) |
+| Optional | Npcap — only for the **Npcap** capture method (the default **System socket** needs nothing) | [npcap.com](https://npcap.com/#download) |
+
+All .NET 10 downloads: [dotnet.microsoft.com/download/dotnet/10.0](https://dotnet.microsoft.com/download/dotnet/10.0).
+
+### Linux (64-bit)
+
+| | What | Install |
+| --- | --- | --- |
+| Required | ASP.NET Core Runtime 10 | Ubuntu/Debian `sudo apt install aspnetcore-runtime-10.0` · Fedora `sudo dnf install aspnetcore-runtime-10.0` · Arch `sudo pacman -S aspnet-runtime` · [others](https://learn.microsoft.com/dotnet/core/install/linux) |
+| Optional | libpcap — only for the **libpcap** capture method | `libpcap0.8` on Ubuntu/Debian, `libpcap` elsewhere |
+
+Allow packet capture once after extracting: `sudo setcap cap_net_raw=ep ./AlbionMeter.Server`.
+
 ## Getting started
 
 Download the latest version at [albionlab.app](https://albionlab.app/#download) and follow the [step-by-step tutorial](https://albionlab.app/tutorial). In short:
 
-1. Open Albion Meter (accept the administrator prompt on Windows) and go to `http://127.0.0.1:5187`.
+1. Install the requirements above, extract the download and open `AlbionMeter.Server` (accept the administrator prompt on Windows). Go to `http://127.0.0.1:5187`.
 2. **Game data** → **Import game folder** → choose the folder that contains `Albion-Online_Data`.
 3. **Capture** → keep **System socket**, pick your network interface → **Start capture**.
 4. Optionally, **Connect account** in the AlbionLab card.
@@ -106,7 +129,7 @@ node scripts/publish.mjs win-x64
 node scripts/publish.mjs linux-x64
 ```
 
-Each command publishes a self-contained build to `artifacts/<runtime>` and creates the matching `.zip` or `.tar.gz` package.
+Each command publishes a build that runs on the installed .NET 10 to `artifacts/<runtime>`, with a `LEIA-ME.txt` (English and Portuguese), and creates the matching `.zip` or `.tar.gz` package.
 
 ### Layout
 

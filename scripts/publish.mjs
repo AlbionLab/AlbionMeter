@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -7,46 +7,98 @@ const runtime = process.argv[2];
 if (!['win-x64', 'linux-x64'].includes(runtime)) throw new Error('Usage: node scripts/publish.mjs win-x64|linux-x64');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const output = `artifacts/${runtime}`;
-const archive = `artifacts/AlbionMeter-0.1.0-${runtime}${runtime === 'win-x64' ? '-portable.zip' : '.tar.gz'}`;
+const archive = `artifacts/AlbionMeter-0.1.0-${runtime}${runtime === 'win-x64' ? '.zip' : '.tar.gz'}`;
 const windows = runtime === 'win-x64';
+const executable = windows ? 'AlbionMeter.Server.exe' : './AlbionMeter.Server';
 const readme = [
-  'Albion Meter 0.1.0' + (windows ? ' - Windows x64 portable' : ' - Linux x64'),
+  `Albion Meter 0.1.0 - ${windows ? 'Windows x64' : 'Linux x64'}`,
+  'https://albionlab.app - tutorial: https://albionlab.app/tutorial',
   '',
-  windows ? 'Extract the entire ZIP, then open AlbionMeter.Server.exe. Accept the Windows administrator prompt.' : 'Run ./AlbionMeter.Server in a terminal.',
-  'Open http://127.0.0.1:5187/ in your browser. Keep the console open while using the meter.',
-  windows ? '.NET is included. No .NET installation or Npcap installation is required for socket capture.' : '.NET is included. Socket capture does not require libpcap.',
+  '== English ==',
   '',
-  'Recording controls:',
-  '- Recording and network capture start stopped. Press Play in Overview to create a new encounter.',
-  '- Pause freezes metrics; Resume continues the same encounter.',
-  '- Stop saves the encounter and shuts down capture. The next Play starts from zero.',
-  '- Starting an interface in Data only observes context and does not start recording combat.',
+  'Requirements',
+  ...(windows ? [
+    '- Windows 10 or 11, 64-bit.',
+    '- .NET Runtime 10 (x64): https://aka.ms/dotnet/10.0/dotnet-runtime-win-x64.exe',
+    '- ASP.NET Core Runtime 10 (x64): https://aka.ms/dotnet/10.0/aspnetcore-runtime-win-x64.exe',
+    '  All versions: https://dotnet.microsoft.com/download/dotnet/10.0',
+    '- Optional: Npcap, only to use the Npcap capture method: https://npcap.com/#download',
+  ] : [
+    '- 64-bit Linux with the ASP.NET Core Runtime 10:',
+    '  Ubuntu/Debian: sudo apt install aspnetcore-runtime-10.0',
+    '  Fedora: sudo dnf install aspnetcore-runtime-10.0',
+    '  Arch: sudo pacman -S aspnet-runtime',
+    '  Other distributions: https://learn.microsoft.com/dotnet/core/install/linux',
+    '- Optional: libpcap, only to use the libpcap capture method (libpcap0.8 on Ubuntu/Debian, libpcap elsewhere).',
+  ]),
   '',
-  'Capture methods (Data > Capture method):',
-  windows
-    ? '- System socket (Windows) is the default and runs as administrator.\n- The first socket capture creates a Windows Firewall rule for this executable.\n- If Npcap is installed, choose Npcap and its interface. Otherwise, use the system socket.'
-    : '- System socket (Linux) is the default. Grant permission once:\n  sudo setcap cap_net_raw=ep ./AlbionMeter.Server\n- If libpcap is installed, it can also be selected in Data.',
+  'Start',
+  ...(windows ? [
+    '1. Extract the whole ZIP to a folder.',
+    '2. Open AlbionMeter.Server.exe and accept the administrator prompt (packet capture needs it).',
+  ] : [
+    '1. Extract the archive and allow packet capture once:',
+    '   sudo setcap cap_net_raw=ep ./AlbionMeter.Server',
+    '2. Run ./AlbionMeter.Server in a terminal.',
+  ]),
+  '3. Open http://127.0.0.1:5187 in your browser. Keep the console window open while you play.',
+  '4. Game data > Import game folder > choose the folder that contains Albion-Online_Data.',
+  '5. Capture > keep System socket, choose your network interface > Start capture (every time you open the meter).',
+  '6. Meter > Play, then fight. Pause/Resume, Stop and Reset control the record.',
+  '7. Optional: Connect account in the AlbionLab card to publish each record as a live session on albionlab.app.',
   '',
-  windows ? 'Portable data: records and settings stay in the data folder beside the executable. Keep this folder when updating the application.' : 'Records and settings stay in the local AlbionMeter user data folder.',
-  'Normal mode saves processed combat/player/equipment data without recording raw PCAP files.',
-  'Optional packet debugging: set Capture__Debug=true before starting. The packets table is limited to 10,000 packets / 32 MB of payloads.',
-  'Leave Capture__Debug unset for normal use.',
-  `Custom storage: ${windows ? 'AlbionMeter.Server.exe' : './AlbionMeter.Server'} --Storage:Directory=<folder>`,
-  'Ctrl+C in the console shuts down the server. --open opens the browser at launch.',
+  `Records and settings are stored in ${windows ? '%LOCALAPPDATA%\\AlbionMeter' : '~/.local/share/AlbionMeter'}. Another folder: ${executable} --Storage:Directory=<folder>`,
+  'Ctrl+C in the console closes the meter. --open opens the browser at launch.',
+  '',
+  '== Português ==',
+  '',
+  'Requisitos',
+  ...(windows ? [
+    '- Windows 10 ou 11, 64 bits.',
+    '- .NET Runtime 10 (x64): https://aka.ms/dotnet/10.0/dotnet-runtime-win-x64.exe',
+    '- ASP.NET Core Runtime 10 (x64): https://aka.ms/dotnet/10.0/aspnetcore-runtime-win-x64.exe',
+    '  Todas as versões: https://dotnet.microsoft.com/download/dotnet/10.0',
+    '- Opcional: Npcap, só para usar o método de captura Npcap: https://npcap.com/#download',
+  ] : [
+    '- Linux 64 bits com o ASP.NET Core Runtime 10:',
+    '  Ubuntu/Debian: sudo apt install aspnetcore-runtime-10.0',
+    '  Fedora: sudo dnf install aspnetcore-runtime-10.0',
+    '  Arch: sudo pacman -S aspnet-runtime',
+    '  Outras distribuições: https://learn.microsoft.com/dotnet/core/install/linux',
+    '- Opcional: libpcap, só para usar o método de captura libpcap (libpcap0.8 no Ubuntu/Debian, libpcap nas outras).',
+  ]),
+  '',
+  'Como abrir',
+  ...(windows ? [
+    '1. Extraia o ZIP inteiro numa pasta.',
+    '2. Abra o AlbionMeter.Server.exe e aceite o pedido de administrador (a captura precisa disso).',
+  ] : [
+    '1. Extraia o arquivo e libere a captura uma vez:',
+    '   sudo setcap cap_net_raw=ep ./AlbionMeter.Server',
+    '2. Execute ./AlbionMeter.Server num terminal.',
+  ]),
+  '3. Abra http://127.0.0.1:5187 no navegador. Deixe a janela do console aberta enquanto joga.',
+  '4. Game data > Import game folder > escolha a pasta que contém Albion-Online_Data.',
+  '5. Capture > deixe System socket, escolha sua placa de rede > Start capture (toda vez que abrir o meter).',
+  '6. Meter > Play e lute. Pause/Resume, Stop e Reset controlam a gravação.',
+  '7. Opcional: Connect account no card do AlbionLab para publicar cada gravação ao vivo no albionlab.app.',
+  '',
+  `Gravações e configurações ficam em ${windows ? '%LOCALAPPDATA%\\AlbionMeter' : '~/.local/share/AlbionMeter'}. Outra pasta: ${executable} --Storage:Directory=<pasta>`,
+  'Ctrl+C no console fecha o meter. --open abre o navegador ao iniciar.',
   ''
 ].join('\n').replace(/\n/g, windows ? '\r\n' : '\n');
 const commands = [
   [npm, ['run', 'build', '--prefix', 'web']],
   ['dotnet', ['publish', 'src/AlbionMeter.Server', '-c', 'Release', '-r', runtime,
-    '--self-contained', 'true', '-o', output]]
+    '--self-contained', 'false', '-p:DebugType=None', '-p:DebugSymbols=false', '-o', output]]
 ];
 for (const [command, args] of commands) {
   const result = spawnSync(command, args, { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' && command === npm });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
+rmSync(`${root}${output}/web.config`, { force: true });
 writeFileSync(`${root}${output}/LEIA-ME.txt`, readme);
-if (windows) { mkdirSync(`${root}${output}/data`, { recursive: true }); writeFileSync(`${root}${output}/data/.portable`, 'Albion Meter keeps its data in this folder.\r\n'); }
 rmSync(`${root}${archive}`, { force: true });
 const packed = spawnSync(windows && process.platform !== 'win32' ? 'bsdtar' : 'tar', windows ? ['-a', '-c', '-f', `../${archive.split('/')[1]}`, '.'] : ['-czf', `../${archive.split('/')[1]}`, '.'],
   { cwd: `${root}${output}`, stdio: 'inherit' });

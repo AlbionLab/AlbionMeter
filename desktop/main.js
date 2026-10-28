@@ -12,13 +12,13 @@ const splashFailed = { width: 440, height: 400 };
 const minimum = { width: 820, height: 560 };
 const needsPermission = process.platform === 'linux' && app.isPackaged;
 let window = null;
+let splashWindow = null;
 let server = null;
 let stopping = null;
 let leaving = false;
 let booting = false;
 let startup = { steps: [], error: null };
 let update = { state: 'idle' };
-let expanded = false;
 
 const logFolder = () => path.join(app.getPath('userData'), 'logs');
 
@@ -30,7 +30,7 @@ function log(message) {
 }
 
 function send(channel, value) {
-  if (window && !window.isDestroyed()) window.webContents.send(channel, value);
+  for (const target of [splashWindow, window]) if (target && !target.isDestroyed()) target.webContents.send(channel, value);
 }
 
 function resetStartup() {
@@ -54,22 +54,20 @@ function fail(message) {
   log(message);
   startup = { ...startup, error: message, steps: startup.steps.map(item => item.state === 'active' ? { ...item, state: 'error' } : item) };
   send('desktop:startup', startup);
-  if (window && !expanded) animate(centered(splashFailed), 220);
+  if (splashWindow && !splashWindow.isDestroyed()) splashWindow.setBounds(centered(splashFailed));
 }
 
 const easeOut = progress => 1 - Math.pow(1 - progress, 3);
+const fades = process.platform === 'win32' || process.platform === 'darwin';
 
-function animate(target, duration = 360) {
-  if (!window || window.isDestroyed()) return Promise.resolve();
-  const from = window.getBounds();
+function fade(target, from, to, duration) {
+  if (!fades || !target || target.isDestroyed()) return Promise.resolve();
   const started = Date.now();
   return new Promise(resolve => {
     const tick = () => {
-      if (!window || window.isDestroyed()) return resolve();
+      if (target.isDestroyed()) return resolve();
       const progress = Math.min(1, (Date.now() - started) / duration);
-      const eased = easeOut(progress);
-      const mix = key => Math.round(from[key] + (target[key] - from[key]) * eased);
-      window.setBounds({ x: mix('x'), y: mix('y'), width: mix('width'), height: mix('height') });
+      target.setOpacity(from + (to - from) * easeOut(progress));
       if (progress < 1) setTimeout(tick, 1000 / 60);
       else resolve();
     };
@@ -78,7 +76,8 @@ function animate(target, duration = 360) {
 }
 
 function workArea() {
-  return (window ? screen.getDisplayMatching(window.getBounds()) : screen.getPrimaryDisplay()).workArea;
+  const anchor = [splashWindow, window].find(item => item && !item.isDestroyed());
+  return (anchor ? screen.getDisplayMatching(anchor.getBounds()) : screen.getPrimaryDisplay()).workArea;
 }
 
 function centered(size) {
@@ -101,7 +100,7 @@ function savedPlacement() {
 }
 
 function savePlacement() {
-  if (!window || window.isDestroyed() || !expanded) return;
+  if (!window || window.isDestroyed() || !window.isVisible()) return;
   try { fs.writeFileSync(placementFile(), JSON.stringify({ ...window.getNormalBounds(), maximized: window.isMaximized() })); } catch {}
 }
 
@@ -115,36 +114,13 @@ function idealBounds() {
 
 const onNiri = process.platform === 'linux' && /niri/i.test(process.env.XDG_CURRENT_DESKTOP ?? '');
 
-async function centerOnNiri() {
-  if (!onNiri) return;
+async function centerOnNiri(target) {
+  if (!onNiri || !target || target.isDestroyed()) return;
   try {
-    const own = JSON.parse((await run('niri', ['msg', '--json', 'windows'])) ?? '[]').find(item => item.pid === process.pid);
+    const title = target.getTitle();
+    const own = JSON.parse((await run('niri', ['msg', '--json', 'windows'])) ?? '[]').find(item => item.pid === process.pid && item.title === title);
     if (own) await run('niri', ['msg', 'action', 'center-window', '--id', String(own.id)]);
   } catch {}
-}
-
-async function expand() {
-  if (!window || expanded) return;
-  const target = idealBounds();
-  window.setResizable(true);
-  window.setMaximizable(true);
-  await animate({ x: target.x, y: target.y, width: target.width, height: target.height }, 380);
-  window.setMinimumSize(minimum.width, minimum.height);
-  expanded = true;
-  await centerOnNiri();
-  if (target.maximized) window.maximize();
-  window.focus();
-}
-
-async function shrink(size) {
-  if (!window || !expanded) return;
-  expanded = false;
-  if (window.isMaximized()) window.unmaximize();
-  window.setMinimumSize(splash.width, splash.height);
-  await animate(centered(size), 300);
-  await centerOnNiri();
-  window.setMaximizable(false);
-  window.setResizable(false);
 }
 
 function setUpdate(value) {
@@ -242,13 +218,14 @@ async function boot() {
     step('server', 'done');
     step('meter', 'active');
     await session.defaultSession.clearCache();
+    await createMain();
     startup = { ...startup, ready: true, steps: startup.steps.map(item => item.id === 'meter' ? { ...item, state: 'done' } : item) };
     send('desktop:startup', startup);
-    await wait(260);
-    await expand();
-    await window.loadURL(`${origin}/`);
+    await wait(180);
+    await reveal();
     watchUpdates();
   } catch (error) {
+    if (window && !window.isDestroyed()) window.destroy();
     fail(error.message);
     await stopServer();
   } finally {
@@ -257,10 +234,9 @@ async function boot() {
 }
 
 async function crashed(code) {
-  if (!window || window.isDestroyed()) return app.quit();
   savePlacement();
-  await window.loadFile(path.join(__dirname, 'loading.html'));
-  await shrink(splashFailed);
+  if (!splashWindow) await createSplash();
+  if (window && !window.isDestroyed()) window.destroy();
   resetStartup();
   fail(`The capture service stopped unexpectedly (code ${code}).`);
 }
@@ -269,11 +245,9 @@ function external(url) {
   if (!url.startsWith(origin)) shell.openExternal(url);
 }
 
-function createWindow() {
-  window = new BrowserWindow({
-    ...centered(splash),
-    resizable: false,
-    maximizable: false,
+function frameless(options) {
+  const created = new BrowserWindow({
+    ...options,
     show: false,
     frame: false,
     title: 'Albion Meter',
@@ -281,14 +255,42 @@ function createWindow() {
     icon: path.join(__dirname, 'build', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
     webPreferences: { contextIsolation: true, sandbox: true, preload: path.join(__dirname, 'preload.js') },
   });
-  window.once('ready-to-show', () => { window.show(); centerOnNiri(); });
-  window.on('maximize', () => send('desktop:window-state', { maximized: true }));
-  window.on('unmaximize', () => send('desktop:window-state', { maximized: false }));
-  window.webContents.setWindowOpenHandler(({ url }) => { external(url); return { action: 'deny' }; });
-  window.webContents.on('will-navigate', (event, url) => { if (!url.startsWith(origin) && !url.startsWith('file:')) { event.preventDefault(); external(url); } });
-  window.on('close', savePlacement);
-  window.on('closed', () => { window = null; });
-  return window.loadFile(path.join(__dirname, 'loading.html'));
+  created.webContents.setWindowOpenHandler(({ url }) => { external(url); return { action: 'deny' }; });
+  created.webContents.on('will-navigate', (event, url) => { if (!url.startsWith(origin) && !url.startsWith('file:')) { event.preventDefault(); external(url); } });
+  return created;
+}
+
+function createSplash() {
+  splashWindow = frameless({ ...centered(splash), resizable: false, maximizable: false, fullscreenable: false });
+  const created = splashWindow;
+  created.once('ready-to-show', () => { created.show(); centerOnNiri(created); });
+  created.on('closed', () => { if (splashWindow === created) splashWindow = null; });
+  return created.loadFile(path.join(__dirname, 'loading.html'));
+}
+
+async function createMain() {
+  const target = idealBounds();
+  window = frameless({ x: target.x, y: target.y, width: target.width, height: target.height, minWidth: minimum.width, minHeight: minimum.height });
+  const created = window;
+  created.on('maximize', () => send('desktop:window-state', { maximized: true }));
+  created.on('unmaximize', () => send('desktop:window-state', { maximized: false }));
+  created.on('close', savePlacement);
+  created.on('closed', () => { if (window === created) window = null; });
+  const ready = new Promise(resolve => created.once('ready-to-show', resolve));
+  await created.loadURL(`${origin}/`);
+  await Promise.race([ready, wait(4000)]);
+  if (target.maximized) created.maximize();
+}
+
+async function reveal() {
+  const shown = window;
+  if (!shown || shown.isDestroyed()) return;
+  if (fades) shown.setOpacity(0);
+  shown.show();
+  shown.focus();
+  centerOnNiri(shown);
+  await Promise.all([fade(shown, 0, 1, 240), fade(splashWindow, 1, 0, 200)]);
+  if (splashWindow && !splashWindow.isDestroyed()) splashWindow.destroy();
 }
 
 let watching = false;
@@ -311,17 +313,18 @@ function watchUpdates() {
   setInterval(check, checkEvery);
 }
 
-ipcMain.handle('desktop:info', () => ({ version: app.getVersion(), platform: process.platform, maximized: window?.isMaximized() ?? false, startup, update, logs: logFolder() }));
+ipcMain.handle('desktop:info', event => ({ version: app.getVersion(), platform: process.platform, maximized: BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false, startup, update, logs: logFolder() }));
 
-ipcMain.on('desktop:window', (_event, action) => {
-  if (!window) return;
-  if (action === 'minimize') window.minimize();
-  else if (action === 'maximize') window.isMaximized() ? window.unmaximize() : window.maximize();
-  else if (action === 'close') window.close();
+ipcMain.on('desktop:window', (event, action) => {
+  const target = BrowserWindow.fromWebContents(event.sender);
+  if (!target) return;
+  if (action === 'minimize') target.minimize();
+  else if (action === 'maximize' && target.isMaximizable()) target.isMaximized() ? target.unmaximize() : target.maximize();
+  else if (action === 'close') target.close();
 });
 
 ipcMain.on('desktop:startup', (_event, action) => {
-  if (action === 'retry') { if (!expanded) animate(centered(splash), 200); boot(); }
+  if (action === 'retry') { splashWindow?.setBounds(centered(splash)); boot(); }
   else if (action === 'logs') shell.openPath(logFolder());
   else if (action === 'quit') app.quit();
 });
@@ -339,13 +342,14 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    if (!window) return;
-    if (window.isMinimized()) window.restore();
-    window.focus();
+    const target = window ?? splashWindow;
+    if (!target) return;
+    if (target.isMinimized()) target.restore();
+    target.focus();
   });
   app.whenReady().then(async () => {
     Menu.setApplicationMenu(null);
-    await createWindow();
+    await createSplash();
     await boot();
   });
   app.on('window-all-closed', () => app.quit());

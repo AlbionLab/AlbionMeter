@@ -83,14 +83,16 @@ export function CapturePanel() {
         <div className="capture-state"><StatusPill status={status?.state ?? 'connecting'} /><span>{status?.source ?? 'none'}</span></div>
       </div>
       <div className="capture-controls">
+        <div className="capture-source">
         <Select className="capture-select" aria-label="Capture method" disabled={busy || !!active} value={method} onChange={next => { setMethod(next); setDevice(devices?.devices.find(item => item.method === next)?.name ?? ''); }} options={devices?.methods?.map(item => ({ value: item.id, label: `${item.name}${item.available ? '' : ' (unavailable)'}`, disabled: !item.available })) ?? []} />
         <Select className="capture-select" aria-label="Capture interface" disabled={busy || !!active} value={device} onChange={setDevice} placeholder="Select network interface" options={deviceOptions} />
         <button className="button secondary" disabled={busy || !!active} onClick={() => setRefresh(value => value + 1)}>Refresh</button>
-        <span className="control-divider" />
+        </div>
+        <div className="capture-actions">
         <button className="button primary" disabled={busy || !!active || !device} onClick={() => void command('start')}>Start capture</button>
         <button className="button secondary" disabled={!active || status?.state === 'stopping'} onClick={() => void command('stop')}>Stop</button>
-        <span className="control-divider" />
         <label className={`button secondary ${busy || active ? 'disabled' : ''}`}>Replay capture<input className="folder-input" type="file" accept=".pcap,.pcapng,.cap" disabled={busy || !!active} onChange={event => { const file = event.target.files?.[0]; if (file) void command('replay', file); event.target.value = ''; }} /></label>
+        </div>
       </div>
       {devices?.error && <p className="capture-note" role="status">Capture interface access: {devices.error}</p>}
       {(error || status?.error) && <p className="error-banner" role="alert">{error || status?.error}</p>}

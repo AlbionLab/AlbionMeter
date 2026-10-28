@@ -7,6 +7,12 @@ using Velopack;
 
 // The Windows installer runs the meter with install, update and uninstall hooks first; it must answer them before anything else.
 VelopackApp.Build().Run();
+if (OperatingSystem.IsWindows() && !WindowsElevation.IsAdministrator())
+{
+    // Capture needs administrator: ask once and let the elevated copy run; if the prompt is declined, go on without it.
+    if (WindowsElevation.RestartElevated(args)) return 0;
+    Console.Error.WriteLine("  Running without administrator rights: packet capture will not start.");
+}
 var version = Program.Version;
 
 static int PortInUse()

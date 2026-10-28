@@ -37,7 +37,7 @@ public sealed class PhotonTransport
         {
             if (bytes.Length < 12 || bytes[3] == 0) return new("malformedPhoton", []);
             if (bytes[2] != 0) return new(bytes[2] == 1 ? "encryptedPhoton" : "unsupportedPhotonFlags", []);
-            var connection = $"{datagram.Flow}:{BinaryPrimitives.ReadUInt16BigEndian(bytes)}:{U32(bytes[8..])}";
+            var connection = Connection(datagram, BinaryPrimitives.ReadUInt16BigEndian(bytes), U32(bytes[8..]));
             var count = bytes[3];
             var offset = 12;
             var commands = new List<(int Offset, int Length)>();
@@ -102,6 +102,14 @@ public sealed class PhotonTransport
         }
         return new("photon", messages.ToArray());
     }
+    /// <summary>
+    /// One Photon connection, named by its peer id and challenge and the direction, never by addresses: a route changer
+    /// (ExitLag, NoPing…) moves the same connection to another IP or port, and copies sent over several routes are
+    /// still the same commands. Only a packet without a challenge falls back to the network flow.
+    /// </summary>
+    private static string Connection(UdpDatagram datagram, ushort peer, uint challenge) => challenge == 0
+        ? $"{datagram.Flow}:{peer}:0"
+        : $"{(NetworkDecoder.IsGamePort(datagram.SourcePort) ? "server" : "client")}:{peer}:{challenge}";
     private static string? Validate(ReadOnlySpan<byte> bytes)
     {
         if (bytes.Length == 0) return "malformedPhoton";

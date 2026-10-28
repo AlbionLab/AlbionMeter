@@ -89,14 +89,24 @@ internal static class CaptureChecks
             for (ushort id = 0; id < 200; id++) decoder.Decode(Frame(Ip(new byte[8], 0x2000, id)));
             assert(decoder.PendingFragments == 128 && decoder.EvictedFragments == 72);
         });
-        test("Retransmissions are deduplicated by flow channel and sequence", () =>
+        test("Retransmissions are deduplicated by connection channel and sequence", () =>
         {
             var decoder = new PhotonTransport(); var udp = Datagram(Photon([0xf3, 4, 1], 10));
             assert(decoder.Decode(udp).Messages.Length == 1);
             assert(decoder.Decode(udp).Messages.Length == 0);
             assert(decoder.Duplicates == 1);
-            assert(decoder.Decode(udp with { Destination = "192.0.2.3" }).Messages.Length == 1);
             assert(decoder.Decode(Datagram(Photon([0xf3, 4, 1], 11))).Messages.Length == 1);
+        });
+        test("A route changer moving the connection to other addresses keeps it one connection", () =>
+        {
+            // ExitLag, NoPing and similar tools switch routes (other IP or port) or send copies over several at once.
+            var decoder = new PhotonTransport(); var udp = Datagram(Photon([0xf3, 4, 1], 10));
+            var first = decoder.Decode(udp).Messages.Single();
+            assert(decoder.Decode(udp with { Source = "198.51.100.7", DestinationPort = 40000 }).Messages.Length == 0);
+            var moved = decoder.Decode(Datagram(Photon([0xf3, 4, 1], 12)) with { Source = "198.51.100.7", DestinationPort = 40000 }).Messages.Single();
+            assert(moved.Connection == first.Connection);
+            var sent = decoder.Decode(Datagram(Photon([0xf3, 4, 1], 12)) with { Source = "192.0.2.2", SourcePort = 12345, Destination = "192.0.2.1", DestinationPort = 5056 }).Messages.Single();
+            assert(sent.Connection != first.Connection);
         });
         test("Malformed trailing data cannot consume a valid command identity", () =>
         {

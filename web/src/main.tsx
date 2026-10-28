@@ -133,14 +133,14 @@ function Meter() {
   const unit = metric === 'damage' ? 'DPS' : 'HPS';
   return <div className={`mini-shell${desktop ? ' desktop' : ''}`}>
     <header className="mini-bar">
-      <span className="brand"><img src="/mark.svg" alt="" /><span>Albion Meter</span></span>
+      <span className="brand"><img src="/mark.svg" alt="" /><span className="brand-name">Albion Meter</span></span>
       <nav className="segmented" aria-label="View">
-        <button className={view === 'meter' ? 'active' : ''} aria-pressed={view === 'meter'} onClick={() => setView('meter')}><Icon name="activity" size={14} />Meter</button>
-        <button className={view === 'capture' ? 'active' : ''} aria-pressed={view === 'capture'} onClick={() => setView('capture')}><Icon name="database" size={14} />Capture</button>
-        <button className={view === 'game' ? 'active' : ''} aria-pressed={view === 'game'} onClick={() => setView('game')}><Icon name="sword" size={14} />Game data</button>
+        <button className={view === 'meter' ? 'active' : ''} aria-pressed={view === 'meter'} title="Meter" onClick={() => setView('meter')}><Icon name="activity" size={14} /><span className="nav-label">Meter</span></button>
+        <button className={view === 'capture' ? 'active' : ''} aria-pressed={view === 'capture'} title="Capture" onClick={() => setView('capture')}><Icon name="database" size={14} /><span className="nav-label">Capture</span></button>
+        <button className={view === 'game' ? 'active' : ''} aria-pressed={view === 'game'} title="Game data" onClick={() => setView('game')}><Icon name="sword" size={14} /><span className="nav-label">Game data</span></button>
       </nav>
       <span className={`capture-pill ${connection !== 'connected' ? 'warn' : status === 'running' ? 'live' : status === 'paused' ? 'warn' : 'off'}`} role="status"><span className="status-dot" />
-        {connection !== 'connected' ? 'Reconnecting' : status === 'running' ? 'Recording' : status === 'paused' ? 'Paused' : status === 'completed' ? 'Stopped' : 'Ready'}</span>
+        <span className="pill-label">{connection !== 'connected' ? 'Reconnecting' : status === 'running' ? 'Recording' : status === 'paused' ? 'Paused' : status === 'completed' ? 'Stopped' : 'Ready'}</span></span>
       <WindowControls />
     </header>
     <UpdateToast />

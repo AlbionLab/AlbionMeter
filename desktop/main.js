@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, session, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { spawn, execFile } = require('node:child_process');
 const fs = require('node:fs');
@@ -146,6 +146,7 @@ async function boot() {
     await startServer();
     step('server', 'done');
     step('meter', 'active');
+    await session.defaultSession.clearCache();
     await window.loadURL(`${origin}/`);
     watchUpdates();
   } catch (error) {
@@ -171,8 +172,8 @@ function createWindow() {
   window = new BrowserWindow({
     width: 1360,
     height: 860,
-    minWidth: 900,
-    minHeight: 600,
+    minWidth: 820,
+    minHeight: 560,
     show: false,
     frame: false,
     title: 'Albion Meter',

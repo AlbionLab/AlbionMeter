@@ -3,8 +3,11 @@ using System.Net;
 using System.Reflection;
 using AlbionMeter.Server;
 using Microsoft.AspNetCore.SignalR;
+using Velopack;
 
-var version = typeof(MeterSession).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.0.0";
+// The Windows installer runs the meter with install, update and uninstall hooks first; it must answer them before anything else.
+VelopackApp.Build().Run();
+var version = Program.Version;
 
 static int PortInUse()
 {
@@ -36,6 +39,8 @@ builder.Services.AddHostedService(provider => provider.GetRequiredService<Captur
 builder.Services.AddSingleton<EncounterStore>();
 builder.Services.AddSingleton<MeterSession>();
 builder.Services.AddHostedService<MeterWorker>();
+builder.Services.AddSingleton<UpdateService>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<UpdateService>());
 builder.Services.AddSingleton<AlbionLabService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<AlbionLabService>());
 builder.Services.AddSignalR(options => options.MaximumReceiveMessageSize = 8192);
@@ -69,6 +74,8 @@ app.Use(async (context, next) =>
 });
 app.UseDefaultFiles();
 app.UseStaticFiles();
+app.MapGet("/api/update", (UpdateService updates) => updates.Status);
+app.MapPost("/api/update/apply", (UpdateService updates) => updates.ApplyAndRestart() ? Results.Accepted() : Results.Conflict(new { error = "No downloaded update to install." }));
 app.MapGet("/api/health", (MeterSession session) => new { status = "ok", version, captureAvailable = session.Snapshot().Mode == "live", packetCaptureImplemented = true, source = session.Snapshot().Mode, executable = Environment.ProcessPath, platform = OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsLinux() ? "linux" : "other", transport = "SignalR", storage = "SQLite" });
 app.MapGet("/api/session", (MeterSession session) => session.Snapshot());
 app.MapGet("/api/encounters", (EncounterStore store) => store.List());
@@ -191,3 +198,8 @@ try { app.Run(); }
 catch (Exception exception) when (exception is Microsoft.AspNetCore.Connections.AddressInUseException || exception.InnerException is Microsoft.AspNetCore.Connections.AddressInUseException)
 { return PortInUse(); }
 return 0;
+
+public partial class Program
+{
+    public static string Version { get; } = typeof(MeterSession).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.0.0";
+}

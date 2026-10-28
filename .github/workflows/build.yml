@@ -27,12 +27,30 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: npm ci --prefix web
       - run: node scripts/publish.mjs ${{ matrix.runtime }}
+      # Windows installer with auto-update (Velopack): self-contained, so it needs no .NET runtime. The previous
+      # release is downloaded first so updates ship as small deltas; the very first one has nothing to download.
+      - name: Windows installer
+        if: matrix.runtime == 'win-x64'
+        shell: pwsh
+        run: |
+          $version = [regex]::Match((Get-Content Directory.Build.props -Raw), '<Version>([^<]+)</Version>').Groups[1].Value
+          dotnet publish src/AlbionMeter.Server -c Release -r win-x64 --self-contained true -p:DebugType=None -p:DebugSymbols=false -o artifacts/installer
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Remove-Item artifacts/installer/web.config -ErrorAction SilentlyContinue
+          Copy-Item artifacts/win-x64/LEIA-ME.txt artifacts/installer/
+          dotnet tool install -g vpk --version 1.2.161
+          vpk download github --repoUrl https://github.com/AlbionLab/AlbionMeter --outputDir artifacts/velopack
+          if ($LASTEXITCODE -ne 0) { Write-Host "No previous installer release; packing without deltas."; $global:LASTEXITCODE = 0 }
+          vpk pack --packId AlbionLab.AlbionMeter --packVersion $version --packDir artifacts/installer --mainExe AlbionMeter.Server.exe --packTitle "Albion Meter" --packAuthors AlbionLab --icon src/AlbionMeter.Server/app.ico --noPortable --outputDir artifacts/velopack
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem artifacts/velopack -File | Where-Object { $_.Name -like "*-full.nupkg" -and $_.Name -notlike "*-$version-full.nupkg" } | Remove-Item
       - uses: actions/upload-artifact@v4
         with:
           name: albion-meter-${{ matrix.runtime }}
           path: |
             artifacts/*.zip
             artifacts/*.tar.gz
+            artifacts/velopack/*
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
@@ -48,6 +66,8 @@ jobs:
         with:
           path: packages
           merge-multiple: true
+      - name: Flatten packages
+        run: find packages -mindepth 2 -type f -exec mv -t packages {} + && find packages -mindepth 1 -type d -empty -delete
       - run: sha256sum * > SHA256SUMS.txt
         working-directory: packages
       - name: Publish release v${{ steps.version.outputs.value }}

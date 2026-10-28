@@ -732,3 +732,5 @@ html:has(.mini-shell.desktop), body:has(.mini-shell.desktop) { height: 100%; ove
   .catalog-table th:nth-child(2), .catalog-table td:nth-child(2) { display: none; }
 }
 @media (max-width: 640px) { .catalog-panel .search.wide { max-width: none; } }
+.mini-shell.desktop { animation: shell-in .35s cubic-bezier(.2, .8, .2, 1) both; }
+@keyframes shell-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }

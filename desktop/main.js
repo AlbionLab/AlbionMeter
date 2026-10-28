@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, screen, session, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { spawn, execFile } = require('node:child_process');
 const fs = require('node:fs');
@@ -7,6 +7,9 @@ const http = require('node:http');
 
 const origin = 'http://127.0.0.1:5187';
 const checkEvery = 6 * 60 * 60 * 1000;
+const splash = { width: 400, height: 300 };
+const splashFailed = { width: 440, height: 400 };
+const minimum = { width: 820, height: 560 };
 const needsPermission = process.platform === 'linux' && app.isPackaged;
 let window = null;
 let server = null;
@@ -15,6 +18,7 @@ let leaving = false;
 let booting = false;
 let startup = { steps: [], error: null };
 let update = { state: 'idle' };
+let expanded = false;
 
 const logFolder = () => path.join(app.getPath('userData'), 'logs');
 
@@ -50,6 +54,97 @@ function fail(message) {
   log(message);
   startup = { ...startup, error: message, steps: startup.steps.map(item => item.state === 'active' ? { ...item, state: 'error' } : item) };
   send('desktop:startup', startup);
+  if (window && !expanded) animate(centered(splashFailed), 220);
+}
+
+const easeOut = progress => 1 - Math.pow(1 - progress, 3);
+
+function animate(target, duration = 360) {
+  if (!window || window.isDestroyed()) return Promise.resolve();
+  const from = window.getBounds();
+  const started = Date.now();
+  return new Promise(resolve => {
+    const tick = () => {
+      if (!window || window.isDestroyed()) return resolve();
+      const progress = Math.min(1, (Date.now() - started) / duration);
+      const eased = easeOut(progress);
+      const mix = key => Math.round(from[key] + (target[key] - from[key]) * eased);
+      window.setBounds({ x: mix('x'), y: mix('y'), width: mix('width'), height: mix('height') });
+      if (progress < 1) setTimeout(tick, 1000 / 60);
+      else resolve();
+    };
+    tick();
+  });
+}
+
+function workArea() {
+  return (window ? screen.getDisplayMatching(window.getBounds()) : screen.getPrimaryDisplay()).workArea;
+}
+
+function centered(size) {
+  const area = workArea();
+  return { width: size.width, height: size.height, x: Math.round(area.x + (area.width - size.width) / 2), y: Math.round(area.y + (area.height - size.height) / 2) };
+}
+
+const placementFile = () => path.join(app.getPath('userData'), 'window.json');
+
+function savedPlacement() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(placementFile(), 'utf8'));
+    const visible = screen.getAllDisplays().some(display => {
+      const area = display.workArea;
+      return saved.x < area.x + area.width - 80 && saved.x + saved.width > area.x + 80 && saved.y >= area.y - 10 && saved.y < area.y + area.height - 80;
+    });
+    if (visible && saved.width >= minimum.width && saved.height >= minimum.height) return saved;
+  } catch {}
+  return null;
+}
+
+function savePlacement() {
+  if (!window || window.isDestroyed() || !expanded) return;
+  try { fs.writeFileSync(placementFile(), JSON.stringify({ ...window.getNormalBounds(), maximized: window.isMaximized() })); } catch {}
+}
+
+function idealBounds() {
+  const area = workArea();
+  const saved = savedPlacement();
+  const width = Math.min(saved?.width ?? Math.max(minimum.width, Math.min(1280, area.width - 120)), area.width);
+  const height = Math.min(saved?.height ?? Math.max(minimum.height, Math.min(820, area.height - 100)), area.height);
+  return { ...centered({ width, height }), maximized: Boolean(saved?.maximized) };
+}
+
+const onNiri = process.platform === 'linux' && /niri/i.test(process.env.XDG_CURRENT_DESKTOP ?? '');
+
+async function centerOnNiri() {
+  if (!onNiri) return;
+  try {
+    const own = JSON.parse((await run('niri', ['msg', '--json', 'windows'])) ?? '[]').find(item => item.pid === process.pid);
+    if (own) await run('niri', ['msg', 'action', 'center-window', '--id', String(own.id)]);
+  } catch {}
+}
+
+async function expand() {
+  if (!window || expanded) return;
+  const target = idealBounds();
+  window.setResizable(true);
+  window.setMaximizable(true);
+  await animate({ x: target.x, y: target.y, width: target.width, height: target.height }, 380);
+  window.setMinimumSize(minimum.width, minimum.height);
+  expanded = true;
+  await centerOnNiri();
+  if (target.maximized) window.maximize();
+  window.focus();
+}
+
+async function shrink(size) {
+  if (!window || !expanded) return;
+  expanded = false;
+  if (window.isMaximized()) window.unmaximize();
+  window.setMinimumSize(splash.width, splash.height);
+  await animate(centered(size), 300);
+  await centerOnNiri();
+  window.setMaximizable(false);
+  window.setResizable(false);
 }
 
 function setUpdate(value) {
@@ -147,6 +242,10 @@ async function boot() {
     step('server', 'done');
     step('meter', 'active');
     await session.defaultSession.clearCache();
+    startup = { ...startup, ready: true, steps: startup.steps.map(item => item.id === 'meter' ? { ...item, state: 'done' } : item) };
+    send('desktop:startup', startup);
+    await wait(260);
+    await expand();
     await window.loadURL(`${origin}/`);
     watchUpdates();
   } catch (error) {
@@ -159,7 +258,9 @@ async function boot() {
 
 async function crashed(code) {
   if (!window || window.isDestroyed()) return app.quit();
+  savePlacement();
   await window.loadFile(path.join(__dirname, 'loading.html'));
+  await shrink(splashFailed);
   resetStartup();
   fail(`The capture service stopped unexpectedly (code ${code}).`);
 }
@@ -170,10 +271,9 @@ function external(url) {
 
 function createWindow() {
   window = new BrowserWindow({
-    width: 1360,
-    height: 860,
-    minWidth: 820,
-    minHeight: 560,
+    ...centered(splash),
+    resizable: false,
+    maximizable: false,
     show: false,
     frame: false,
     title: 'Albion Meter',
@@ -181,11 +281,12 @@ function createWindow() {
     icon: path.join(__dirname, 'build', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
     webPreferences: { contextIsolation: true, sandbox: true, preload: path.join(__dirname, 'preload.js') },
   });
-  window.once('ready-to-show', () => window.show());
+  window.once('ready-to-show', () => { window.show(); centerOnNiri(); });
   window.on('maximize', () => send('desktop:window-state', { maximized: true }));
   window.on('unmaximize', () => send('desktop:window-state', { maximized: false }));
   window.webContents.setWindowOpenHandler(({ url }) => { external(url); return { action: 'deny' }; });
   window.webContents.on('will-navigate', (event, url) => { if (!url.startsWith(origin) && !url.startsWith('file:')) { event.preventDefault(); external(url); } });
+  window.on('close', savePlacement);
   window.on('closed', () => { window = null; });
   return window.loadFile(path.join(__dirname, 'loading.html'));
 }
@@ -220,7 +321,7 @@ ipcMain.on('desktop:window', (_event, action) => {
 });
 
 ipcMain.on('desktop:startup', (_event, action) => {
-  if (action === 'retry') boot();
+  if (action === 'retry') { if (!expanded) animate(centered(splash), 200); boot(); }
   else if (action === 'logs') shell.openPath(logFolder());
   else if (action === 'quit') app.quit();
 });

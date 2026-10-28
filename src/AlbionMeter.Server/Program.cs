@@ -73,7 +73,7 @@ app.Use(async (context, next) =>
     await next();
 });
 app.UseDefaultFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = context => context.Context.Response.Headers.CacheControl = "no-cache" });
 app.MapPost("/api/shutdown", (IHostApplicationLifetime lifetime) => { lifetime.StopApplication(); return Results.Accepted(); });
 app.MapGet("/api/health", (MeterSession session) => new { status = "ok", version, captureAvailable = session.Snapshot().Mode == "live", packetCaptureImplemented = true, source = session.Snapshot().Mode, executable = Environment.ProcessPath, platform = OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsLinux() ? "linux" : "other", transport = "SignalR", storage = "SQLite" });
 app.MapGet("/api/session", (MeterSession session) => session.Snapshot());

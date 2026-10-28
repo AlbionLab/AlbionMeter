@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -102,7 +102,9 @@ for (const [command, args] of commands) {
 rmSync(`${root}${output}/web.config`, { force: true });
 writeFileSync(`${root}${output}/LEIA-ME.txt`, readme);
 rmSync(`${root}${archive}`, { force: true });
-const packed = spawnSync(windows && process.platform !== 'win32' ? 'bsdtar' : 'tar', windows ? ['-a', '-c', '-f', `../${archive.split('/')[1]}`, '.'] : ['-czf', `../${archive.split('/')[1]}`, '.'],
+// Name the entries rather than '.', so they are stored without a './' prefix that Windows Explorer shows as an empty ZIP.
+const entries = readdirSync(`${root}${output}`);
+const packed = spawnSync(windows && process.platform !== 'win32' ? 'bsdtar' : 'tar', windows ? ['-a', '-c', '-f', `../${archive.split('/')[1]}`, ...entries] : ['-czf', `../${archive.split('/')[1]}`, ...entries],
   { cwd: `${root}${output}`, stdio: 'inherit' });
 if (packed.error || packed.status !== 0) { console.error('Packaging failed; the published folder is still available.'); process.exit(1); }
 console.log(`Package: ${archive}`);

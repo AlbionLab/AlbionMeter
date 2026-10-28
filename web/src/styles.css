@@ -647,3 +647,23 @@ dd { margin: 0; color: var(--text-2); font-family: var(--mono); font-size: 12px;
 .albionlab-name { width: 100%; }
 .albionlab-name input { flex: 1; max-width: 420px; height: 32px; padding: 0 11px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; }
 .albionlab-name input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(249, 135, 20, 0.16); }
+.desktop .mini-bar { flex-wrap: nowrap; height: 52px; padding: 0 0 0 20px; -webkit-app-region: drag; user-select: none; }
+.desktop .mini-bar .segmented, .desktop .mini-bar .capture-pill, .desktop .mini-bar button, .desktop .mini-bar a { -webkit-app-region: no-drag; }
+.window-controls { display: flex; align-self: stretch; margin-left: 4px; }
+.window-controls button { display: grid; place-items: center; width: 46px; height: 100%; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; transition: background .15s, color .15s; }
+.window-controls button:hover { background: #ffffff10; color: var(--text); }
+.window-controls button.close:hover { background: #e81123; color: #fff; }
+.update-toast { position: fixed; right: 20px; bottom: 20px; z-index: 50; display: flex; flex-direction: column; gap: 10px; width: min(360px, calc(100vw - 40px)); padding: 14px 16px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface); box-shadow: 0 18px 44px #000a; animation: toast-in .25s ease-out both; }
+.update-toast.ready { border-color: #f08a2466; }
+.update-head { display: flex; align-items: center; gap: 9px; color: var(--text); font-size: 13px; }
+.update-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+.update-percent { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 12px; }
+.update-progress { height: 6px; overflow: hidden; border-radius: 3px; background: var(--surface-3); }
+.update-progress i { display: block; height: 100%; border-radius: 3px; background: var(--accent); transition: width .3s ease; }
+.update-note { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.update-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.app-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; min-height: calc(100vh - 52px); color: var(--muted); font-size: 13px; animation: toast-in .3s ease-out both; }
+.app-loading img { width: 56px; height: 56px; }
+.app-loading-spinner { width: 18px; height: 18px; border: 2px solid var(--border-strong); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes spin { to { transform: rotate(360deg); } }

@@ -35,6 +35,7 @@
     },
     "files": [
       "main.js",
+      "preload.js",
       "loading.html",
       "package.json",
       "build/icon.png",

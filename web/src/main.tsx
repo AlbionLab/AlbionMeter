@@ -4,6 +4,8 @@ import { useMeter } from './useMeter';
 import { CopyDamage } from './CopyDamage';
 import { CapturePanel } from './CapturePanel';
 import { CaptureNotice } from './CaptureNotice';
+import { AppLoading, UpdateToast, WindowControls } from './DesktopChrome';
+import { desktop } from './desktop';
 import { GameLibrary } from './Library';
 import { Icon } from './Icon';
 import { Select } from './Select';
@@ -129,7 +131,7 @@ function Meter() {
   const top = players[0]?.[metric] ?? 0;
   const total = data ? metric === 'damage' ? data.totalDamage : data.totalHealing : 0;
   const unit = metric === 'damage' ? 'DPS' : 'HPS';
-  return <div className="mini-shell">
+  return <div className={`mini-shell${desktop ? ' desktop' : ''}`}>
     <header className="mini-bar">
       <span className="brand"><img src="/mark.svg" alt="" /><span>Albion Meter</span></span>
       <nav className="segmented" aria-label="View">
@@ -139,8 +141,10 @@ function Meter() {
       </nav>
       <span className={`capture-pill ${connection !== 'connected' ? 'warn' : status === 'running' ? 'live' : status === 'paused' ? 'warn' : 'off'}`} role="status"><span className="status-dot" />
         {connection !== 'connected' ? 'Reconnecting' : status === 'running' ? 'Recording' : status === 'paused' ? 'Paused' : status === 'completed' ? 'Stopped' : 'Ready'}</span>
+      <WindowControls />
     </header>
-    <main className="mini-main">
+    <UpdateToast />
+    {!data && connection !== 'connected' ? <AppLoading /> : <main className="mini-main">
       {error && <div className="error-banner" role="alert">{error}<button onClick={dismissError}>Dismiss</button></div>}
       {view !== 'capture' && <CaptureNotice openCapture={() => setView('capture')} />}
       {view === 'meter' && <>
@@ -180,7 +184,7 @@ function Meter() {
       </>}
       {view === 'capture' && <CapturePanel />}
       {view === 'game' && <GameLibrary tab={catalogTab} onTab={setCatalogTab} />}
-    </main>
+    </main>}
   </div>;
 }
 

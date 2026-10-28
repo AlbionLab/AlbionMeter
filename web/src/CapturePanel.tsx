@@ -8,7 +8,7 @@ type CaptureStatus = {
   library: string | null; adapter: { received: number; dropped: number; interfaceDropped: number } | null;
   report: { frames: number; bytes: number; counters: Record<string, number>; flows: Record<string, number>; combatDecoded: boolean; combatDiagnostics?: Record<string, number> } | null;
 };
-type DeviceList = { available: boolean; library: string | null; debugEnabled: boolean; selectedDevice?: string; methods?: { id: string; name: string; available: boolean }[]; devices: { name: string; description: string; method: string }[]; error: string | null };
+type DeviceList = { available: boolean; library: string | null; debugEnabled: boolean; selectedDevice?: string; methods?: { id: string; name: string; available: boolean }[]; devices: { name: string; description: string; method: string; flags: number }[]; error: string | null };
 
 export function CapturePanel() {
   const [devices, setDevices] = useState<DeviceList | null>(null);
@@ -70,6 +70,11 @@ export function CapturePanel() {
   const permissionHint = /CAP_NET_RAW|permission|npcap|wpcap/i.test(failure);
   const setcap = `sudo setcap cap_net_raw=ep ${host?.executable ?? './AlbionMeter.Server'}`;
   const report = status?.report;
+  // The card with the default route carries the game traffic; every-interface capture also follows ExitLag, NoPing and VPN adapters.
+  const everything = (name: string) => name === 'raw:all' || name === 'raw:any';
+  const deviceOptions = (devices?.devices ?? []).filter(item => item.method === method)
+    .map(item => ({ value: item.name, label: item.description || item.name, badge: everything(item.name) ? 'ExitLag / VPN' : (item.flags & 1) !== 0 ? 'Main' : undefined }))
+    .sort((a, b) => Number(b.badge === 'Main') - Number(a.badge === 'Main'));
   const diagnostics = report ? Object.entries({ ...report.counters, ...report.combatDiagnostics }) : [];
   return <div className="capture-layout">
     <section className="panel capture-panel">
@@ -79,7 +84,7 @@ export function CapturePanel() {
       </div>
       <div className="capture-controls">
         <Select className="capture-select" aria-label="Capture method" disabled={busy || !!active} value={method} onChange={next => { setMethod(next); setDevice(devices?.devices.find(item => item.method === next)?.name ?? ''); }} options={devices?.methods?.map(item => ({ value: item.id, label: `${item.name}${item.available ? '' : ' (unavailable)'}`, disabled: !item.available })) ?? []} />
-        <Select className="capture-select" aria-label="Capture interface" disabled={busy || !!active} value={device} onChange={setDevice} placeholder="Select network interface" options={devices?.devices.filter(item => item.method === method).map(item => ({ value: item.name, label: item.description || item.name })) ?? []} />
+        <Select className="capture-select" aria-label="Capture interface" disabled={busy || !!active} value={device} onChange={setDevice} placeholder="Select network interface" options={deviceOptions} />
         <button className="button secondary" disabled={busy || !!active} onClick={() => setRefresh(value => value + 1)}>Refresh</button>
         <span className="control-divider" />
         <button className="button primary" disabled={busy || !!active || !device} onClick={() => void command('start')}>Start capture</button>

@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 
-export interface SelectOption { value: string; label: string; disabled?: boolean }
+export interface SelectOption { value: string; label: string; disabled?: boolean; badge?: string }
 
 interface Props {
   value: string;
@@ -74,6 +74,7 @@ export function Select({ value, options, onChange, disabled = false, className =
       <button ref={button} type="button" className="ui-select-button" disabled={disabled} aria-label={rest['aria-label']} aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? id : undefined}
         onClick={() => open ? setOpen(false) : show()} onKeyDown={key}>
         <span className="ui-select-value">{selected?.label ?? placeholder}</span>
+        {selected?.badge && <span className="ui-select-badge">{selected.badge}</span>}
         <svg className="ui-select-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
       </button>
       {open && <ul ref={list} id={id} role="listbox" className="ui-select-list" style={position} aria-label={rest['aria-label']} aria-activedescendant={`${id}-${active}`}>
@@ -81,6 +82,7 @@ export function Select({ value, options, onChange, disabled = false, className =
           <li key={option.value} id={`${id}-${index}`} role="option" aria-selected={option.value === value} aria-disabled={option.disabled || undefined}
             data-active={index === active} onPointerEnter={() => { if (!option.disabled) setActive(index); }} onClick={() => choose(option)}>
             <span>{option.label}</span>
+            {option.badge && <span className="ui-select-badge">{option.badge}</span>}
             {option.value === value && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>}
           </li>
         ))}

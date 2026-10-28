@@ -14,4 +14,5 @@ contextBridge.exposeInMainWorld('albionDesktop', {
   update: action => ipcRenderer.send('desktop:update', action),
   onStartup: callback => listen('desktop:startup', callback),
   startup: action => ipcRenderer.send('desktop:startup', action),
+  permission: () => ipcRenderer.invoke('desktop:permission'),
 });

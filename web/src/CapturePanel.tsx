@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { precise } from './types';
 import { Section, StatCard, StatusPill } from './ui';
 import { Select } from './Select';
+import { desktop } from './desktop';
 
 type CaptureStatus = {
   state: string; source: string; file: string | null; error: string | null; stopReason: string | null;
@@ -18,6 +19,7 @@ export function CapturePanel() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [refresh, setRefresh] = useState(0);
+  const [granting, setGranting] = useState(false);
   const [host, setHost] = useState<{ executable: string | null; platform: string } | null>(null);
   const [copied, setCopied] = useState(false);
   useEffect(() => { fetch('/api/health').then(response => response.json()).then(setHost).catch(() => setHost(null)); }, []);
@@ -65,6 +67,14 @@ export function CapturePanel() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setBusy(false); }
   }
+  async function grant() {
+    setGranting(true); setError('');
+    try {
+      if (!await desktop!.permission()) { setError('Packet capture permission was not granted.'); return; }
+      setRefresh(value => value + 1);
+      if (device) await command('start');
+    } finally { setGranting(false); }
+  }
   const active = status && ['starting', 'running', 'stopping'].includes(status.state);
   const failure = `${error} ${status?.error ?? ''} ${devices?.error ?? ''}`;
   const permissionHint = /CAP_NET_RAW|permission|npcap|wpcap/i.test(failure);
@@ -98,6 +108,7 @@ export function CapturePanel() {
       {(error || status?.error) && <p className="error-banner" role="alert">{error || status?.error}</p>}
       {permissionHint && <div className="capture-hint">{host?.platform === 'windows'
         ? <p>Close Albion Meter and open it again as administrator (right-click AlbionMeter.Server.exe, Run as administrator). Packet capture uses a Windows raw socket and needs no driver.</p>
+        : desktop ? <div className="capture-hint-grant"><p>Albion Meter needs permission to read the game traffic. Allow it once with your system password and capture starts right away.</p><button className="button primary" disabled={granting} onClick={() => void grant()}>{granting ? 'Waiting for permission…' : 'Allow packet capture'}</button></div>
         : <><p>Grant packet capture permission once, then restart Albion Meter:</p><div className="capture-hint-command"><code>{setcap}</code><button className="button secondary" onClick={() => void navigator.clipboard?.writeText(setcap).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); })}>{copied ? 'Copied' : 'Copy'}</button></div><p className="capture-hint-note">Rebuilding or replacing the executable removes this permission.</p></>}</div>}
     </section>
     <div className="metric-grid four">

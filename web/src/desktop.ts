@@ -12,6 +12,7 @@ export interface Desktop {
   onWindowState: (callback: (state: { maximized: boolean }) => void) => () => void;
   onUpdate: (callback: (state: UpdateState) => void) => () => void;
   update: (action: 'install' | 'check') => void;
+  permission: () => Promise<boolean>;
 }
 
 export const desktop = (window as unknown as { albionDesktop?: Desktop }).albionDesktop;

@@ -18,7 +18,7 @@ export function CaptureNotice({ openCapture }: { openCapture: () => void }) {
   const permission = /permission|CAP_NET_RAW|npcap/i.test(status.error ?? '');
   const reason = permission ? 'packet capture permission is missing' : status.stopReason ? reasons[status.stopReason] : status.source === 'none' ? 'it was not started' : undefined;
   return <>
-    {status.state === 'failed' && <div className="error-banner capture-alert" role="alert"><span><strong>Combat is not being recorded</strong>{reason ? ` because ${reason}` : ''}. Damage and healing from now on will be lost.</span><button className="button primary" onClick={openCapture}>Open Data source</button></div>}
+    {status.state === 'failed' && <div className="error-banner capture-alert" role="alert"><span><strong>Combat is not being recorded</strong>{reason ? ` because ${reason}` : ''}. Damage and healing from now on will be lost.</span><button className="button primary" onClick={openCapture}>Open Capture</button></div>}
     {recording && pending >= 30 && <div className="connection-banner" role="status"><span>{precise(pending)} combat updates are waiting for their players to be identified. They are credited as soon as each player is named (chat message, gear change or coming into view) and kept as unidentified players at the next zone change.</span></div>}
   </>;
 }

@@ -393,7 +393,7 @@ dd { margin: 0; color: var(--text-2); font-family: var(--mono); font-size: 12px;
 .capture-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px; border-bottom: 1px solid var(--border); background: radial-gradient(120% 160% at 100% 0%, #f08a2412, transparent 50%); }
 .capture-head h2 { margin: 6px 0 6px; font-size: 20px; letter-spacing: -.02em; }
 .capture-head p { max-width: 720px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
-.capture-state { display: flex; align-items: center; gap: 8px; color: var(--muted); font-family: var(--mono); font-size: 12px; }
+.capture-state { display: flex; flex: none; align-items: center; gap: 8px; white-space: nowrap; color: var(--muted); font-family: var(--mono); font-size: 12px; }
 .capture-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin: 0; padding: 14px 18px; }
 .capture-source { display: flex; flex: 1 1 560px; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
 .capture-source .capture-select { flex: 1 1 220px; min-width: 0; }
@@ -406,6 +406,8 @@ dd { margin: 0; color: var(--text-2); font-family: var(--mono); font-size: 12px;
 .capture-hint-command { display: flex; align-items: center; gap: 8px; }
 .capture-hint-command code { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-family: var(--mono); font-size: 12px; white-space: nowrap; overflow-x: auto; }
 .capture-hint-note { color: var(--muted); font-size: 11px; }
+.capture-hint-grant { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.capture-hint-grant p { flex: 1 1 280px; margin: 0; line-height: 1.5; }
 .capture-columns { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start; }
 .diag-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); max-height: 560px; margin: 0; overflow-y: auto; align-content: start; }
 .diag-grid > div { display: flex; justify-content: space-between; gap: 10px; padding: 8px 16px; border-top: 0; border-right: 1px solid var(--row); border-bottom: 1px solid var(--row); font-size: 12px; }
@@ -690,6 +692,8 @@ dd { margin: 0; color: var(--text-2); font-family: var(--mono); font-size: 12px;
 ::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
 .mini-shell.desktop { display: flex; flex-direction: column; height: 100vh; min-height: 0; overflow: hidden; }
 .desktop .mini-bar { position: relative; flex: none; }
+.desktop .capture-alert { top: 0; }
+.mini-shell:not(.desktop) .capture-alert { top: 64px; }
 .desktop .mini-main { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .desktop .app-loading { flex: 1; min-height: 0; }
 html:has(.mini-shell.desktop), body:has(.mini-shell.desktop) { height: 100%; overflow: hidden; }

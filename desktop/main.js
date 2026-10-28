@@ -14,6 +14,7 @@ const needsPermission = process.platform === 'linux' && app.isPackaged;
 let window = null;
 let splashWindow = null;
 let server = null;
+let executable = null;
 let stopping = null;
 let leaving = false;
 let booting = false;
@@ -179,10 +180,11 @@ async function linuxServer() {
 
 async function startServer() {
   if (await healthy()) return;
-  const { folder, executable } = needsPermission ? await linuxServer() : bundledServer();
+  const { folder, executable: file } = needsPermission ? await linuxServer() : bundledServer();
+  executable = file;
   fs.mkdirSync(logFolder(), { recursive: true });
   const output = fs.openSync(path.join(logFolder(), 'server.log'), 'a');
-  const child = spawn(executable, [], { cwd: folder, windowsHide: true, stdio: ['ignore', output, output], env: { ...process.env, ALBION_METER_DESKTOP: '1' } });
+  const child = spawn(file, [], { cwd: folder, windowsHide: true, stdio: ['ignore', output, output], env: { ...process.env, ALBION_METER_DESKTOP: '1' } });
   server = child;
   child.on('exit', code => {
     if (server === child) server = null;
@@ -327,6 +329,23 @@ ipcMain.on('desktop:startup', (_event, action) => {
   if (action === 'retry') { splashWindow?.setBounds(centered(splash)); boot(); }
   else if (action === 'logs') shell.openPath(logFolder());
   else if (action === 'quit') app.quit();
+});
+
+ipcMain.handle('desktop:permission', async () => {
+  if (process.platform !== 'linux' || !executable || booting) return false;
+  if ((await run('pkexec', ['setcap', 'cap_net_raw=ep', executable])) === null) return false;
+  booting = true;
+  try {
+    await stopServer();
+    await startServer();
+    return true;
+  } catch (error) {
+    log(`restart after permission failed: ${error.message}`);
+    crashed(null);
+    return false;
+  } finally {
+    booting = false;
+  }
 });
 
 ipcMain.on('desktop:update', async (_event, action) => {

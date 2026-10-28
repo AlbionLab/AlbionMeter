@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Net;
 using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
@@ -17,7 +18,15 @@ public sealed class LinuxSocketCapture : ICaptureSource
 
     public static CaptureDevice[] Devices() => [new("raw:any", "All interfaces (Linux socket)", PacketCapture.DefaultRouteFlag), .. NetworkInterface.GetAllNetworkInterfaces()
         .Where(adapter => adapter.OperationalStatus == OperationalStatus.Up && adapter.NetworkInterfaceType != NetworkInterfaceType.Loopback)
-        .Select(adapter => new CaptureDevice($"raw:{adapter.Name}", $"{adapter.Name} (Linux socket)", 0))];
+        .Select(adapter => new CaptureDevice($"raw:{adapter.Name}", $"{adapter.Name} (Linux socket)", Routed(adapter) ? PacketCapture.DefaultRouteFlag : 0))
+        .OrderByDescending(device => device.Flags)];
+
+    /// <summary>The main card: the one with an IPv4 gateway, where the internet traffic goes.</summary>
+    private static bool Routed(NetworkInterface adapter)
+    {
+        try { return adapter.GetIPProperties().GatewayAddresses.Any(gateway => gateway.Address.AddressFamily == AddressFamily.InterNetwork && !gateway.Address.Equals(IPAddress.Any)); }
+        catch (NetworkInformationException) { return false; }
+    }
 
     public static LinuxSocketCapture Open(string device)
     {

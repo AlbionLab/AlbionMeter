@@ -20,7 +20,7 @@ public static class PacketCapture
     public static CaptureDevice[] Devices()
     {
         var devices = new List<CaptureDevice>();
-        if (OperatingSystem.IsWindows()) devices.AddRange(RawSocketCapture.Devices());
+        if (OperatingSystem.IsWindows()) devices.AddRange([AllAdaptersCapture.Device, .. RawSocketCapture.Devices()]);
         if (OperatingSystem.IsLinux()) devices.AddRange(LinuxSocketCapture.Devices());
         try { devices.AddRange(NativePcap.Devices()); }
         catch (Exception exception) when (exception is IOException or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException) { }
@@ -29,13 +29,15 @@ public static class PacketCapture
     public static string? DefaultDevice(CaptureDevice[] devices)
     {
         if (OperatingSystem.IsLinux() && devices.Any(device => device.Name == "raw:any")) return "raw:any";
+        // Every adapter, so the game is still seen when ExitLag, NoPing or a VPN moves it to their own adapter.
+        if (OperatingSystem.IsWindows() && devices.Any(device => device.Name == AllAdaptersCapture.Name)) return AllAdaptersCapture.Name;
         if (OperatingSystem.IsWindows()) return devices.FirstOrDefault(device => device.Name.StartsWith(RawSocketPrefix, StringComparison.Ordinal) && (device.Flags & DefaultRouteFlag) != 0)?.Name ?? devices.FirstOrDefault(device => device.Name.StartsWith(RawSocketPrefix, StringComparison.Ordinal))?.Name;
         return null;
     }
     public static ICaptureSource Open(string device)
     {
         if (device.StartsWith(RawSocketPrefix, StringComparison.Ordinal))
-            return OperatingSystem.IsWindows() ? RawSocketCapture.Open(device) : OperatingSystem.IsLinux() ? LinuxSocketCapture.Open(device) : throw new PlatformNotSupportedException("Socket capture is available on Windows and Linux.");
+            return OperatingSystem.IsWindows() ? device == AllAdaptersCapture.Name ? AllAdaptersCapture.Open() : RawSocketCapture.Open(device) : OperatingSystem.IsLinux() ? LinuxSocketCapture.Open(device) : throw new PlatformNotSupportedException("Socket capture is available on Windows and Linux.");
         return NativePcap.OpenDevice(device);
     }
     public static ICaptureSource OpenFile(string path) => PcapFile.Open(path);
@@ -70,6 +72,7 @@ public sealed class RawSocketCapture : ICaptureSource
     private uint _received;
     public int LinkType => LinkTypeRaw;
     private RawSocketCapture(Socket socket) => _socket = socket;
+    internal Socket Socket => _socket;
     public static CaptureDevice[] Devices() => NetworkInterface.GetAllNetworkInterfaces()
         .Where(adapter => adapter.OperationalStatus == OperationalStatus.Up && adapter.NetworkInterfaceType != NetworkInterfaceType.Loopback)
         .SelectMany(adapter =>
@@ -119,6 +122,61 @@ public sealed class RawSocketCapture : ICaptureSource
     }
     public AdapterStatistics? Statistics() => new(_received, 0, 0);
     public void Dispose() => _socket.Dispose();
+}
+
+/// <summary>
+/// A raw socket on every IPv4 adapter at once, rescanned every few seconds: ExitLag, NoPing and VPNs carry the game on
+/// an adapter of their own, often one that appears only once they are turned on. A packet seen on two adapters is
+/// dropped later as a Photon duplicate.
+/// </summary>
+[SupportedOSPlatform("windows")]
+public sealed class AllAdaptersCapture : ICaptureSource
+{
+    public const string Name = PacketCapture.RawSocketPrefix + "all";
+    public static readonly CaptureDevice Device = new(Name, "All adapters (Windows raw socket)", PacketCapture.DefaultRouteFlag);
+    private static readonly TimeSpan RescanEvery = TimeSpan.FromSeconds(5);
+    private readonly Dictionary<string, RawSocketCapture> _sockets = [];
+    private DateTime _scanned;
+    public int LinkType => 101;
+    private AllAdaptersCapture() { }
+    public static AllAdaptersCapture Open()
+    {
+        var capture = new AllAdaptersCapture();
+        if (capture.Scan() is { } failure && capture._sockets.Count == 0) { capture.Dispose(); throw failure; }
+        if (capture._sockets.Count == 0) { capture.Dispose(); throw new IOException("No network adapter with an IPv4 address is up."); }
+        return capture;
+    }
+    private IOException? Scan()
+    {
+        _scanned = DateTime.UtcNow;
+        var present = RawSocketCapture.Devices().Select(device => device.Name).ToHashSet();
+        foreach (var gone in _sockets.Keys.Where(name => !present.Contains(name)).ToArray()) { _sockets[gone].Dispose(); _sockets.Remove(gone); }
+        IOException? failure = null;
+        foreach (var name in present.Where(name => !_sockets.ContainsKey(name)))
+        {
+            try { _sockets[name] = RawSocketCapture.Open(name); }
+            catch (Exception exception) when (exception is IOException or ArgumentException) { failure ??= exception as IOException ?? new IOException(exception.Message, exception); }
+        }
+        return failure;
+    }
+    public bool Read(out CaptureFrame? frame)
+    {
+        frame = null;
+        if (DateTime.UtcNow - _scanned > RescanEvery) Scan();
+        if (_sockets.Count == 0) { Thread.Sleep(50); return true; }
+        var ready = _sockets.Values.Select(capture => capture.Socket).ToList();
+        try { Socket.Select(ready, null, null, 50_000); }
+        catch (Exception exception) when (exception is SocketException or ObjectDisposedException) { Scan(); return true; }
+        foreach (var capture in _sockets.Values.Where(capture => ready.Contains(capture.Socket)))
+            if (capture.Read(out frame) && frame is not null) return true;
+        return true;
+    }
+    public AdapterStatistics? Statistics() => new((uint)_sockets.Values.Sum(capture => capture.Statistics()?.Received ?? 0), 0, 0);
+    public void Dispose()
+    {
+        foreach (var capture in _sockets.Values) capture.Dispose();
+        _sockets.Clear();
+    }
 }
 
 public sealed class PcapFile : ICaptureSource

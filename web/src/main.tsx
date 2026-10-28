@@ -4,7 +4,6 @@ import { useMeter } from './useMeter';
 import { CopyDamage } from './CopyDamage';
 import { CapturePanel } from './CapturePanel';
 import { CaptureNotice } from './CaptureNotice';
-import { UpdateNotice } from './UpdateNotice';
 import { GameLibrary } from './Library';
 import { Icon } from './Icon';
 import { Select } from './Select';
@@ -143,7 +142,6 @@ function Meter() {
     </header>
     <main className="mini-main">
       {error && <div className="error-banner" role="alert">{error}<button onClick={dismissError}>Dismiss</button></div>}
-      <UpdateNotice />
       {view !== 'capture' && <CaptureNotice openCapture={() => setView('capture')} />}
       {view === 'meter' && <>
         <section className="panel mini-controls">

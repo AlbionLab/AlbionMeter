@@ -24,33 +24,31 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: |
+            web/package-lock.json
+            desktop/package-lock.json
       - run: npm ci --prefix web
       - run: node scripts/publish.mjs ${{ matrix.runtime }}
-      # Windows installer with auto-update (Velopack): self-contained, so it needs no .NET runtime. The previous
-      # release is downloaded first so updates ship as small deltas; the very first one has nothing to download.
-      - name: Windows installer
-        if: matrix.runtime == 'win-x64'
-        shell: pwsh
+      - name: Desktop app
+        shell: bash
         run: |
-          $version = [regex]::Match((Get-Content Directory.Build.props -Raw), '<Version>([^<]+)</Version>').Groups[1].Value
-          dotnet publish src/AlbionMeter.Server -c Release -r win-x64 --self-contained true -p:DebugType=None -p:DebugSymbols=false -o artifacts/installer
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Remove-Item artifacts/installer/web.config -ErrorAction SilentlyContinue
-          Copy-Item artifacts/win-x64/LEIA-ME.txt artifacts/installer/
-          dotnet tool install -g vpk --version 1.2.161
-          vpk download github --repoUrl https://github.com/AlbionLab/AlbionMeter --outputDir artifacts/velopack
-          if ($LASTEXITCODE -ne 0) { Write-Host "No previous installer release; packing without deltas."; $global:LASTEXITCODE = 0 }
-          vpk pack --packId AlbionLab.AlbionMeter --packVersion $version --packDir artifacts/installer --mainExe AlbionMeter.Server.exe --packTitle "Albion Meter" --packAuthors AlbionLab --icon src/AlbionMeter.Server/app.ico --noPortable --outputDir artifacts/velopack
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Get-ChildItem artifacts/velopack -File | Where-Object { $_.Name -like "*-full.nupkg" -and $_.Name -notlike "*-$version-full.nupkg" } | Remove-Item
+          version=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props | head -1)
+          dotnet publish src/AlbionMeter.Server -c Release -r ${{ matrix.runtime }} --self-contained true -p:DebugType=None -p:DebugSymbols=false -o desktop/server
+          rm -f desktop/server/web.config
+          npm ci --prefix desktop
+          cd desktop
+          npx electron-builder ${{ matrix.runtime == 'win-x64' && '--win' || '--linux' }} --x64 --publish never -c.extraMetadata.version=$version
       - uses: actions/upload-artifact@v4
         with:
           name: albion-meter-${{ matrix.runtime }}
           path: |
             artifacts/*.zip
             artifacts/*.tar.gz
-            artifacts/velopack/*
+            desktop/dist/*.exe
+            desktop/dist/*.blockmap
+            desktop/dist/*.AppImage
+            desktop/dist/*.deb
+            desktop/dist/latest*.yml
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build

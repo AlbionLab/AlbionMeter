@@ -584,8 +584,6 @@ dd { margin: 0; color: var(--text-2); font-family: var(--mono); font-size: 12px;
 .mini-bar .segmented { margin-left: auto; }
 .mini-main { display: flex; flex-direction: column; gap: 14px; width: 100%; padding: 18px 20px 40px; }
 @media (max-width: 640px) { .mini-main { padding: 14px 12px 32px; } }
-.update-banner { border-color: #f08a2455; background: var(--accent-soft); color: var(--text); }
-.update-banner a { color: var(--accent); font-weight: 600; }
 .mini-controls { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 16px 18px; }
 .mini-time { display: flex; flex-direction: column; }
 .mini-time strong { font-family: var(--mono); font-size: 26px; }

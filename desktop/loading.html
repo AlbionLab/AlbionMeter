@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">
+<title>Albion Meter</title>
+<style>
+html, body { height: 100%; margin: 0; }
+body { display: grid; place-items: center; background: #0a0d13; color: #8b95a7; font: 14px system-ui, sans-serif; }
+main { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+strong { color: #e6e9ef; font-size: 15px; letter-spacing: .08em; text-transform: uppercase; }
+i { width: 28px; height: 28px; border: 3px solid #1f2733; border-top-color: #f08a24; border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<main><i></i><strong>Albion Meter</strong><span>Starting the meter…</span></main>
+</body>
+</html>

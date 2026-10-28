@@ -148,7 +148,20 @@ node scripts/publish.mjs linux-x64
 
 Each command publishes a build that runs on the installed .NET 10 to `artifacts/<runtime>`, with a `LEIA-ME.txt` (English and Portuguese), and creates the matching `.zip` or `.tar.gz` package.
 
-The version comes from `<Version>` in `Directory.Build.props`. Every push to `main` builds both packages and publishes them, with `SHA256SUMS.txt`, to the GitHub release `v<Version>`: a new version creates a new release, the same version replaces its files. Download the latest from [Releases](https://github.com/AlbionLab/AlbionMeter/releases/latest).
+### Desktop app
+
+`desktop/` is an Electron window around the same React page. It starts the bundled server (self-contained, so no .NET runtime is needed), stops it cleanly when closed and updates itself from the GitHub releases with electron-updater. On Windows it asks for administrator once at start for packet capture; on Linux it grants `cap_net_raw` to its copy of the server through a pkexec prompt the first time each version runs.
+
+```bash
+dotnet publish src/AlbionMeter.Server -c Release -r linux-x64 --self-contained true -o desktop/server
+npm ci --prefix desktop
+npm start --prefix desktop
+npm run dist:linux --prefix desktop
+```
+
+`dist:win` and `dist:linux` build the NSIS installer, the AppImage and the `.deb` in `desktop/dist`.
+
+The version comes from `<Version>` in `Directory.Build.props`. Every push to `main` builds the packages and the desktop installers and publishes them, with `SHA256SUMS.txt`, to the GitHub release `v<Version>`: a new version creates a new release, the same version replaces its files. Download the latest from [Releases](https://github.com/AlbionLab/AlbionMeter/releases/latest).
 
 ### Layout
 

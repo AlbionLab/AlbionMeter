@@ -1,0 +1,85 @@
+{
+  "name": "albion-meter",
+  "productName": "Albion Meter",
+  "version": "0.0.0",
+  "description": "Free damage and healing meter for Albion Online",
+  "homepage": "https://albionlab.app",
+  "author": {
+    "name": "AlbionLab",
+    "email": "projeto@raids.app"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.js",
+  "desktopName": "albion-meter.desktop",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win --x64 --publish never",
+    "dist:linux": "electron-builder --linux --x64 --publish never"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.10"
+  },
+  "devDependencies": {
+    "electron": "44.7.1",
+    "electron-builder": "26.17.0"
+  },
+  "build": {
+    "appId": "app.albionlab.meter",
+    "productName": "Albion Meter",
+    "executableName": "albion-meter",
+    "artifactName": "AlbionMeter-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "loading.html",
+      "package.json",
+      "build/icon.png",
+      "build/icon.ico"
+    ],
+    "extraResources": [
+      {
+        "from": "server",
+        "to": "server"
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "AlbionLab",
+        "repo": "AlbionMeter"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico",
+      "requestedExecutionLevel": "requireAdministrator",
+      "artifactName": "AlbionMeter-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "shortcutName": "Albion Meter"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "build/icon.png",
+      "category": "Game",
+      "synopsis": "Damage and healing meter for Albion Online",
+      "syncDesktopName": true
+    }
+  },
+  "allowScripts": {
+    "electron-winstaller": false
+  }
+}

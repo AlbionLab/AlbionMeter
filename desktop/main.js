@@ -152,6 +152,7 @@ function bundledServer() {
 
 async function linuxServer() {
   const bundled = bundledServer();
+  if (((await run('getcap', [bundled.executable])) ?? '').includes('cap_net_raw')) return bundled;
   const root = path.join(app.getPath('userData'), 'server');
   const folder = path.join(root, app.getVersion());
   const executable = path.join(folder, 'AlbionMeter.Server');

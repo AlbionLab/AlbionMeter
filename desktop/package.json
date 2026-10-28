@@ -83,6 +83,9 @@
       "category": "Game",
       "synopsis": "Damage and healing meter for Albion Online",
       "syncDesktopName": true
+    },
+    "deb": {
+      "afterInstall": "build/linux-after-install.sh"
     }
   },
   "allowScripts": {

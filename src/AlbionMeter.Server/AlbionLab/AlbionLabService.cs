@@ -29,7 +29,7 @@ public sealed class AlbionLabService(IConfiguration configuration, MeterSession 
     static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(15) };
     readonly Lock gate = new();
-    readonly string server = (configuration["AlbionLab:Url"] ?? "https://albionlab.app").TrimEnd('/');
+    readonly string server = Server(configuration["AlbionLab:Url"]);
     readonly string settingsPath = Path.Combine(configuration["Storage:Directory"] ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AlbionMeter"), "albionlab.json");
     Settings? settings;
     AlbionLabPairing? pairing;
@@ -67,6 +67,18 @@ public sealed class AlbionLabService(IConfiguration configuration, MeterSession 
                 pairing is { } pending && pending.ExpiresAt > DateTimeOffset.UtcNow ? pending : null, pairingError, session, Current.ShareLocation, Current.Visibility, Current.Anonymize);
     }
 
+    static string Server(string? configured)
+    {
+        if (Uri.TryCreate(configured?.TrimEnd('/'), UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback))
+            return uri.GetLeftPart(UriPartial.Authority);
+        return "https://albionlab.app";
+    }
+
+    string VerifyUrl(string? offered, string code) =>
+        Uri.TryCreate(offered, UriKind.Absolute, out var uri) && uri.GetLeftPart(UriPartial.Authority) == server
+            ? uri.AbsoluteUri : $"{server}/link?code={Uri.EscapeDataString(code)}";
+
     public async Task<AlbionLabStatus> Connect(CancellationToken cancellation)
     {
         using var response = await http.PostAsJsonAsync($"{server}/api/devices/pair", new { name = $"Albion Meter · {Environment.MachineName}" }, cancellation);
@@ -75,7 +87,8 @@ public sealed class AlbionLabService(IConfiguration configuration, MeterSession 
         lock (gate)
         {
             pollToken = body.GetProperty("pollToken").GetString();
-            pairing = new(body.GetProperty("code").GetString()!, body.GetProperty("verifyUrl").GetString()!, DateTimeOffset.UtcNow.AddSeconds(body.GetProperty("expiresIn").GetInt32()));
+            var code = body.GetProperty("code").GetString()!;
+            pairing = new(code, VerifyUrl(body.GetProperty("verifyUrl").GetString(), code), DateTimeOffset.UtcNow.AddSeconds(body.GetProperty("expiresIn").GetInt32()));
             pairingError = null;
         }
         return Status();

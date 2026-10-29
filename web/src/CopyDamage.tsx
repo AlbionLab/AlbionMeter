@@ -63,8 +63,8 @@ async function damageImage(snapshot: Snapshot, metric: Metric): Promise<Blob> {
     const weapon = weapons.find(item => `${item.name} · T${item.tier}.${item.enchantment}` === player.weapon);
     return { weapon, image: weapon ? await loadIcon(weapon.id) : null };
   })]) as [HTMLImageElement | null, ...{ weapon: Awaited<ReturnType<typeof weaponCatalog>>[number] | undefined; image: HTMLImageElement | null }[]];
-  const width = 900, pad = 40, rowHeight = 46, rowGap = 8, top = 286;
-  const height = top + players.length * (rowHeight + rowGap) + 56;
+  const width = 720, pad = 20, rowHeight = 34, rowGap = 5, top = 84;
+  const height = top + players.length * (rowHeight + rowGap) + 30;
   const canvas = document.createElement('canvas');
   canvas.width = width * 2;
   canvas.height = height * 2;
@@ -84,61 +84,51 @@ async function damageImage(snapshot: Snapshot, metric: Metric): Promise<Blob> {
   // Background with the brand glow.
   context.fillStyle = '#0a0d13';
   context.fillRect(0, 0, width, height);
-  const glow = context.createRadialGradient(110, -40, 0, 110, -40, 620);
-  glow.addColorStop(0, '#f987142e');
+  const glow = context.createRadialGradient(60, -30, 0, 60, -30, 420);
+  glow.addColorStop(0, '#f9871426');
   glow.addColorStop(1, '#f9871400');
   context.fillStyle = glow;
   context.fillRect(0, 0, width, height);
 
-  // Brand and what the picture is.
-  if (brand) context.drawImage(brand, pad, 32, 40 * brand.width / Math.max(1, brand.height), 40);
-  font(700, 24);
+  // A compact header, so a 20-player party is mostly ranking: brand, what it is, when, and the party totals on the right.
+  if (brand) context.drawImage(brand, pad, 20, 30 * brand.width / Math.max(1, brand.height), 30);
+  const textX = pad + 46;
+  font(700, 16);
   context.fillStyle = '#e9ecf2';
-  context.fillText('AlbionLab', pad + 56, 61);
-  const pill = (metric === 'damage' ? 'Total damage' : 'Total healing').toUpperCase();
-  font(700, 12);
-  const pillWidth = context.measureText(pill).width + 28;
-  context.fillStyle = '#f9871422';
-  rounded(width - pad - pillWidth, 36, pillWidth, 30, 15);
-  context.fill();
-  context.fillStyle = '#f98714';
-  context.textAlign = 'center';
-  context.fillText(pill, width - pad - pillWidth / 2, 55);
-  context.textAlign = 'left';
-
-  // Title line: when, how long, how many.
-  font(800, 40);
-  context.fillStyle = '#e9ecf2';
-  context.fillText(metric === 'damage' ? 'Party damage' : 'Party healing', pad, 132);
+  context.fillText(metric === 'damage' ? 'Party damage' : 'Party healing', textX, 34);
   const started = new Date(snapshot.startedAt);
   const when = Number.isNaN(started.getTime()) ? '' : started.toLocaleString('en', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  font(400, 17);
+  font(400, 11.5);
   context.fillStyle = '#808a9b';
-  context.fillText([when, clock(snapshot.elapsedSeconds), `${players.length} ${(players.length === 1 ? 'player' : 'players')}`].filter(Boolean).join('   ·   '), pad + 2, 164);
+  context.fillText([when, clock(snapshot.elapsedSeconds), `${players.length} ${players.length === 1 ? 'player' : 'players'}`].filter(Boolean).join('  ·  '), textX, 52);
 
-  // Party totals.
   const totalDamage = players.reduce((sum, player) => sum + player.damage, 0);
   const totalHealing = players.reduce((sum, player) => sum + player.healing, 0);
   const elapsed = Math.max(1, snapshot.elapsedSeconds);
   const stats: [string, string][] = metric === 'damage'
     ? [['DAMAGE', compactNumber(totalDamage)], ['HEALING', compactNumber(totalHealing)], ['PARTY DPS', number().format(Math.round(totalDamage / elapsed))]]
     : [['HEALING', compactNumber(totalHealing)], ['DAMAGE', compactNumber(totalDamage)], ['PARTY HPS', number().format(Math.round(totalHealing / elapsed))]];
-  const cardWidth = (width - pad * 2 - 24) / 3;
-  stats.forEach(([label, value], index) => {
-    const x = pad + index * (cardWidth + 12);
+  let statRight = width - pad;
+  for (const [label, value] of [...stats].reverse()) {
+    font(700, 9);
+    const labelWidth = context.measureText(label).width;
+    font(600, 14, mono);
+    const cardWidth = Math.max(labelWidth, context.measureText(value).width) + 22;
+    const x = statRight - cardWidth;
     context.fillStyle = '#11161f';
-    rounded(x, 190, cardWidth, 72, 12);
+    rounded(x, 18, cardWidth, 40, 8);
     context.fill();
     context.strokeStyle = '#1f2734';
     context.lineWidth = 1;
     context.stroke();
-    font(700, 11);
+    font(700, 9);
     context.fillStyle = '#808a9b';
-    context.fillText(label, x + 18, 214);
-    font(600, 26, mono);
+    context.fillText(label, x + 11, 32);
+    font(600, 14, mono);
     context.fillStyle = '#e9ecf2';
-    context.fillText(value, x + 18, 248);
-  });
+    context.fillText(value, x + 11, 50);
+    statRight = x - 6;
+  }
 
   // The ranking.
   const total = players.reduce((sum, player) => sum + player[metric], 0);
@@ -149,62 +139,63 @@ async function damageImage(snapshot: Snapshot, metric: Metric): Promise<Blob> {
     const x = pad, w = width - pad * 2;
     const color = /^#[0-9a-f]{6}$/i.test(player.color) ? player.color : '#9ebbf3';
     context.fillStyle = '#161c27';
-    rounded(x, y, w, rowHeight, 9);
+    rounded(x, y, w, rowHeight, 7);
     context.fill();
     context.save();
-    rounded(x, y, w, rowHeight, 9);
+    rounded(x, y, w, rowHeight, 7);
     context.clip();
     context.fillStyle = `${color}4a`;
     context.fillRect(x, y, w * player[metric] / leader, rowHeight);
     context.restore();
     context.strokeStyle = '#1f2734';
-    rounded(x, y, w, rowHeight, 9);
+    rounded(x, y, w, rowHeight, 7);
     context.stroke();
     const middle = y + rowHeight / 2;
-    font(600, 14, mono);
+    font(600, 11, mono);
     context.fillStyle = '#808a9b';
     context.textAlign = 'center';
-    context.fillText(String(index + 1), x + 22, middle + 5);
+    context.fillText(String(index + 1), x + 15, middle + 4);
     context.textAlign = 'left';
     const { weapon, image } = equipment[index];
-    if (image) context.drawImage(image, x + 42, y + 5, 36, 36);
+    if (image) context.drawImage(image, x + 30, y + 4, 26, 26);
     else {
       context.fillStyle = '#0a0d13';
-      rounded(x + 42, y + 5, 36, 36, 6);
+      rounded(x + 30, y + 4, 26, 26, 5);
       context.fill();
     }
-    const right = x + w - 18;
-    font(400, 13, mono);
+    const right = x + w - 12;
+    font(400, 11, mono);
     const rate = `${number().format(Math.round(metric === 'damage' ? player.encounterDps : player.encounterHps))} ${unit}`;
     context.fillStyle = '#b7becb';
     context.textAlign = 'right';
-    context.fillText(rate, right, middle + 5);
-    font(600, 15, mono);
+    context.fillText(rate, right, middle + 4);
+    font(600, 12.5, mono);
     context.fillStyle = '#e9ecf2';
-    const amount = `${compactNumber(player[metric])}  (${(total > 0 ? player[metric] / total * 100 : 0).toFixed(1)}%)`;
-    const amountRight = right - 96;
-    context.fillText(amount, amountRight, middle + 5);
-    const amountLeft = amountRight - context.measureText(amount).width - 20;
+    const amount = `${compactNumber(player[metric])}  ${(total > 0 ? player[metric] / total * 100 : 0).toFixed(1)}%`;
+    const amountRight = right - 72;
+    context.fillText(amount, amountRight, middle + 4);
+    const amountLeft = amountRight - context.measureText(amount).width - 16;
     context.textAlign = 'left';
-    font(700, 17);
-    const name = fit(player.name, Math.min(280, amountLeft - (x + 92)));
+    font(700, 13.5);
+    const nameX = x + 64;
+    const name = fit(player.name, Math.min(220, amountLeft - nameX));
     context.save();
     context.fillStyle = '#e9ecf2';
-    context.fillText(name, x + 92, middle + 6);
+    context.fillText(name, nameX, middle + 5);
     context.restore();
-    const nameEnd = x + 92 + context.measureText(name).width + 12;
+    const nameEnd = nameX + context.measureText(name).width + 10;
     const tier = weapon?.tier ? `T${weapon.tier}.${weapon.enchantment}` : '';
     const weaponLabel = weapon ? `${weapon.name}${tier ? ` · ${tier}` : ''}` : player.weapon === 'Unarmed' ? 'Unarmed' : '';
-    if (weaponLabel && amountLeft - nameEnd > 60) {
-      font(400, 13);
+    if (weaponLabel && amountLeft - nameEnd > 50) {
+      font(400, 11);
       context.fillStyle = '#9aa3b2';
-      context.fillText(fit(weaponLabel, amountLeft - nameEnd), nameEnd, middle + 5);
+      context.fillText(fit(weaponLabel, amountLeft - nameEnd), nameEnd, middle + 4);
     }
   });
 
   // Footer.
-  const footer = height - 24;
-  font(400, 14);
+  const footer = height - 11;
+  font(400, 11);
   context.fillStyle = '#808a9b';
   context.fillText(`${'Total'}  ${number().format(Math.round(total))}`, pad + 2, footer);
   context.textAlign = 'right';

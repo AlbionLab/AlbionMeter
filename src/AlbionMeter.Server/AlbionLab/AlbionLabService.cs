@@ -14,7 +14,7 @@ public sealed record AlbionLabPairing(string Code, string VerifyUrl, DateTimeOff
 public sealed record AlbionLabSession(string Id, string Url, string Visibility, bool Anonymize, string State, string? Error, DateTimeOffset? PublishedAt, string? Title = null);
 public sealed record AlbionLabStatus(string Server, bool Connected, AlbionLabAccount? Account, AlbionLabPairing? Pairing, string? PairingError, AlbionLabSession? Session, bool ShareLocation, string Visibility, bool Anonymize);
 
-public sealed class AlbionLabService(IConfiguration configuration, MeterSession meter, CaptureService capture, CombatSourceCatalog sources, ILogger<AlbionLabService> logger) : BackgroundService
+public sealed class AlbionLabService(IConfiguration configuration, MeterSession meter, CaptureService capture, CombatSourceCatalog sources, MapCatalog catalog, ILogger<AlbionLabService> logger) : BackgroundService
 {
     sealed class Settings
     {
@@ -313,7 +313,8 @@ public sealed class AlbionLabService(IConfiguration configuration, MeterSession 
         var observed = player.Weapon != "Weapon not observed";
         var seen = !observed && fallback.TryGetValue(player.Id, out var weapon) ? weapon : null;
         var label = seen?.Item ?? player.Weapon;
-        return new(player.Id, player.Name, label, seen is null ? player.WeaponFamily : "seen in combat", player.Color,
+        // A weapon identified from the abilities used still has a family; the site marks it as seen in combat by itself.
+        return new(player.Id, player.Name, label, seen is null ? player.WeaponFamily : catalog.WeaponFamily(seen.ItemIndex) ?? player.WeaponFamily, player.Color,
             membership is "left" or "unconfirmed" ? membership : "active", sources.ItemIdByName(label));
     }
 }

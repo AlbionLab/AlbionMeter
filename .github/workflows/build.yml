@@ -116,6 +116,10 @@ jobs:
         run: |
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             gh release upload "$TAG" packages/* --repo "$GITHUB_REPOSITORY" --clobber
+          elif gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" > /dev/null 2>&1; then
+            # A tag that already exists is released as it is: pointing a release at an old commit, whose workflow
+            # differs from this one, needs a permission the job token does not have.
+            gh release create "$TAG" packages/* --repo "$GITHUB_REPOSITORY" --verify-tag --title "Albion Meter $TAG" --generate-notes --latest="$LATEST"
           else
             gh release create "$TAG" packages/* --repo "$GITHUB_REPOSITORY" --target "$REF" --title "Albion Meter $TAG" --generate-notes --latest="$LATEST"
           fi

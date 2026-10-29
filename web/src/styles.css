@@ -665,6 +665,7 @@ dd { margin: 0; color: var(--text-2); font-family: var(--mono); font-size: 12px;
 .update-progress { height: 6px; overflow: hidden; border-radius: 3px; background: var(--surface-3); }
 .update-progress i { display: block; height: 100%; border-radius: 3px; background: var(--accent); transition: width .3s ease; }
 .update-note { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.update-note a { color: var(--text); }
 .update-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .app-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; min-height: calc(100vh - 52px); color: var(--muted); font-size: 13px; animation: toast-in .3s ease-out both; }
 .app-loading img { width: 56px; height: 56px; }

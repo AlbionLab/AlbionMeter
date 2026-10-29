@@ -21,6 +21,7 @@ export function WindowControls() {
 }
 
 const megabytes = (value?: number) => value === undefined ? '' : `${(value / 1_048_576).toFixed(1)} MB`;
+const releaseNotes = (version: string) => `https://github.com/AlbionLab/AlbionMeter/releases/tag/v${version}`;
 
 export function UpdateToast() {
   const [update, setUpdate] = useState<UpdateState>({ state: 'idle' });
@@ -34,11 +35,11 @@ export function UpdateToast() {
   if (update.state === 'downloading') return <aside className="update-toast" role="status">
     <div className="update-head"><span className="update-dot" /><strong>Downloading Albion Meter {update.version}</strong><span className="update-percent">{update.percent}%</span></div>
     <div className="update-progress"><i style={{ width: `${update.percent}%` }} /></div>
-    <span className="update-note">{update.total ? `${megabytes(update.transferred)} of ${megabytes(update.total)} · ` : ''}Keeps running while you play.</span>
+    <span className="update-note">{update.total ? `${megabytes(update.transferred)} of ${megabytes(update.total)} · ` : ''}Keeps running while you play. <a href={releaseNotes(update.version)} target="_blank" rel="noreferrer">What's new</a></span>
   </aside>;
   if ((update.state === 'ready' || update.state === 'installing') && later !== update.version) return <aside className="update-toast ready" role="status">
     <div className="update-head"><span className="update-dot" /><strong>Albion Meter {update.version} is ready</strong></div>
-    <span className="update-note">Restarting stops the current record. If you wait, it installs when you close the meter.</span>
+    <span className="update-note">Restarting stops the current record. If you wait, it installs when you close the meter. <a href={releaseNotes(update.version)} target="_blank" rel="noreferrer">What's new</a></span>
     <div className="update-actions">
       <button className="button secondary" disabled={update.state === 'installing'} onClick={() => setLater(update.version)}>Later</button>
       <button className="button primary" disabled={update.state === 'installing'} onClick={() => desktop?.update('install')}>{update.state === 'installing' ? 'Restarting…' : 'Restart and update'}</button>

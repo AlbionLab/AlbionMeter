@@ -93,6 +93,16 @@ public sealed class CaptureService(IConfiguration configuration, CharacterContex
         archive(current);
         return current;
     }
+    public CaptureSessionStatus ResetRecord()
+    {
+        lock (_analysisGate)
+        {
+            if (_liveAnalysis is null) throw new InvalidOperationException("There is no active record to reset.");
+            _liveAnalysis.ResetCounts(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000);
+            var next = Status with { Report = _liveAnalysis.Snapshot() };
+            Publish(next); return next;
+        }
+    }
     public CaptureSessionStatus NewRecord(Action<CaptureSessionStatus> archive)
     {
         if (_liveAnalysis?.RecordState is "running" or "paused") StopRecord(archive);

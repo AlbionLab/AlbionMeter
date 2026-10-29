@@ -124,7 +124,8 @@ public sealed class MeterSession(EncounterStore store, MapCatalog? catalog = nul
                     SaveCurrent();
                     break;
                 case "new-record":
-                    capture.NewRecord(Archive);
+                    capture.ResetRecord();
+                    SaveCurrent();
                     break;
                 default:
                     throw new ArgumentException("Unknown session command.", nameof(action));

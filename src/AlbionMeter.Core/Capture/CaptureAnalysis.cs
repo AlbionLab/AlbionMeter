@@ -35,6 +35,17 @@ public sealed class CaptureAnalysis(CombatSourceCatalog? sources = null, bool ma
     }
     /// <param name="keepIdentities">The capture came back by itself after a short drop on the same game connection: the
     /// players, their objects and the dungeon floor are still the same, so they are kept instead of learned again.</param>
+    /// <summary>Reset: damage and healing start again from zero in the same record, which keeps its id, its players and
+    /// its pause state (and so its AlbionLab session); the dungeon runs start again from the floor the party is on.</summary>
+    public void ResetCounts(long timestamp)
+    {
+        if (RecordState is not ("running" or "paused")) throw new InvalidOperationException("There is no active record to reset.");
+        var id = _combat.Snapshot?.Id;
+        var paused = RecordState == "paused";
+        _combat.BeginSession(timestamp, id);
+        _dungeons.ResetRecording(timestamp, id ?? _combat.Snapshot!.Id);
+        if (paused) { _combat.SetPaused(true, timestamp); _dungeons.SetPaused(true, timestamp); }
+    }
     public void BeginCapture(long? timestamp = null, bool preserveRecord = false, bool keepIdentities = false)
     {
         _contextFrames = _frames; _frames = 0; _bytes = 0; _first = null; _last = null; _counters.Clear(); _flows.Clear();

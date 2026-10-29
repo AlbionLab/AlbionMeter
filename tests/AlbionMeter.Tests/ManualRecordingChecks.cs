@@ -65,6 +65,34 @@ internal static class ManualRecordingChecks
             Assert(after.TotalDamage == 150 && after.Members.Any(member => member.Name == "Alpha" && member.Damage == 150));
         });
     }
+    public static void RunReset(Action<string, Action> test)
+    {
+        test("Reset clears damage and healing but keeps the record, its players and the pause", () =>
+        {
+            void Assert(bool condition, [System.Runtime.CompilerServices.CallerLineNumber] int line = 0) { if (!condition) throw new Exception($"Reset assertion at line {line}"); }
+            var analysis = new CaptureAnalysis(manualRecording: true);
+            analysis.BeginCapture(1_000_000);
+            var sequence = 0u;
+            void Send(byte kind, Dictionary<byte, object?> values, long at) => analysis.Add(Frame(kind, values, at, ++sequence));
+            var character = Guid.NewGuid();
+            Send(3, new() { [253] = (byte)2, [0] = 10, [1] = character.ToByteArray(), [2] = "Alpha", [8] = "@RANDOMDUNGEON@one", [66] = "1315" }, 1_100_000);
+            void Hit(float delta, long at) => Send(4, new() { [252] = (byte)6, [0] = 30, [6] = 10, [2] = delta, [7] = -1, [5] = (byte)0 }, at);
+            analysis.StartRecord(2_000_000);
+            Hit(-100, 3_000_000); Hit(40, 4_000_000);
+            var id = analysis.Snapshot().Combat!.Id;
+            analysis.ResetCounts(5_000_000);
+            var reset = analysis.Snapshot().Combat!;
+            Assert(analysis.RecordState == "running" && reset.Id == id && reset.TotalDamage == 0 && reset.TotalHealing == 0);
+            Hit(-30, 6_000_000);
+            var after = analysis.Snapshot().Combat!;
+            Assert(after.Id == id && after.TotalDamage == 30 && after.Members.Any(member => member.Name == "Alpha" && member.Damage == 30));
+            Assert(analysis.Snapshot().Dungeons!.Single().Totals.TotalDamage == 30);
+            analysis.SetPaused(true, 7_000_000);
+            analysis.ResetCounts(8_000_000);
+            Hit(-500, 9_000_000);
+            Assert(analysis.RecordState == "paused" && analysis.Snapshot().Combat!.TotalDamage == 0 && analysis.Snapshot().Combat!.Id == id);
+        });
+    }
     private static CaptureFrame Frame(byte kind, Dictionary<byte, object?> values, long at, uint sequence)
     {
         using var stream = new MemoryStream(); using var writer = new BinaryWriter(stream);

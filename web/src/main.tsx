@@ -159,7 +159,7 @@ function Meter() {
             {status === 'paused' && <button className="button primary" disabled={!canControl} onClick={() => void command('resume-record')}><Icon name="play" size={13} />Resume</button>}
             {(status === 'idle' || status === 'completed') && <button className="button primary" disabled={!canControl} onClick={() => void command('start-record')}><Icon name="play" size={13} />Play</button>}
             {(status === 'running' || status === 'paused') && <button className="button secondary" disabled={!canControl} onClick={() => void command('stop-record')}><Icon name="stop" size={13} />Stop</button>}
-            {(status === 'running' || status === 'paused') && <button className="button secondary" disabled={!canControl} title="Discard this record and start again from zero" onClick={() => void command('new-record')}><Icon name="history" size={13} />Reset</button>}
+            {(status === 'running' || status === 'paused') && <button className="button secondary" disabled={!canControl} title="Clear damage and healing and count again from zero, keeping the players and the AlbionLab session" onClick={() => void command('new-record')}><Icon name="history" size={13} />Reset</button>}
           </div>
         </section>
         <AlbionLabCard recording={status === 'running' || status === 'paused'} />

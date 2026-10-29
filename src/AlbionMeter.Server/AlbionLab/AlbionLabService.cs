@@ -198,6 +198,7 @@ public sealed class AlbionLabService(IConfiguration configuration, MeterSession 
         }
     }
 
+    DateTimeOffset? publishedStart;
     async Task Publish(CancellationToken cancellation)
     {
         var token = Current.DeviceToken;
@@ -211,6 +212,9 @@ public sealed class AlbionLabService(IConfiguration configuration, MeterSession 
             if (record.Status == "completed") return;
             await CreateSession(token, record, cancellation);
         }
+        // Reset keeps the record but starts it again from zero (a new start time): the session is sent again in full.
+        else if (publishedStart is { } start && start != record.StartedAt) lock (gate) compactor.Reset();
+        publishedStart = record.StartedAt;
         var connection = await Hub(token, cancellation);
         if (connection is null || session is null) return;
         var self = capture.Status.Report?.Character?.CharacterId.ToString();

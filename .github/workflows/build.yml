@@ -28,7 +28,8 @@ jobs:
             existing=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName --jq '.[].tagName')
             for tag in $(gh api "repos/$GITHUB_REPOSITORY/tags" --paginate --jq '.[].name' | sort -V); do
               if [ "$tag" != "$current" ] && ! grep -qxF "$tag" <<< "$existing"; then
-                releases=$(jq -c --arg tag "$tag" '. + [{tag: $tag, ref: $tag, latest: false}]' <<< "$releases")
+                ref=$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha)
+                releases=$(jq -c --arg tag "$tag" --arg ref "$ref" '. + [{tag: $tag, ref: $ref, latest: false}]' <<< "$releases")
               fi
             done
           fi

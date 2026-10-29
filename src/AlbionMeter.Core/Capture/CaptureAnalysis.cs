@@ -33,12 +33,17 @@ public sealed class CaptureAnalysis(CombatSourceCatalog? sources = null, bool ma
         _dungeons.SetRecording(false, timestamp);
         RecordState = "completed";
     }
-    public void BeginCapture(long? timestamp = null, bool preserveRecord = false)
+    /// <param name="keepIdentities">The capture came back by itself after a short drop on the same game connection: the
+    /// players, their objects and the dungeon floor are still the same, so they are kept instead of learned again.</param>
+    public void BeginCapture(long? timestamp = null, bool preserveRecord = false, bool keepIdentities = false)
     {
         _contextFrames = _frames; _frames = 0; _bytes = 0; _first = null; _last = null; _counters.Clear(); _flows.Clear();
         var since = timestamp ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000;
-        _combat.ForgetIdentities(since);
-        _dungeons.ForgetIdentities(since);
+        if (!keepIdentities)
+        {
+            _combat.ForgetIdentities(since);
+            _dungeons.ForgetIdentities(since);
+        }
         if (!preserveRecord)
         {
             var paused = _combat.IsPaused;

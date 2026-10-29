@@ -40,6 +40,31 @@ internal static class ManualRecordingChecks
             Assert(analysis.Snapshot().Combat!.TotalDamage == 10 && analysis.Snapshot().Combat!.TotalHealing == 0 && analysis.Snapshot().Dungeons!.Single().Totals.TotalDamage == 10);
         });
     }
+    public static void RunCaptureDrop(Action<string, Action> test)
+    {
+        test("A capture that drops and comes back keeps the same record and its players", () =>
+        {
+            void Assert(bool condition, [System.Runtime.CompilerServices.CallerLineNumber] int line = 0) { if (!condition) throw new Exception($"Capture drop assertion at line {line}"); }
+            var analysis = new CaptureAnalysis(manualRecording: true);
+            analysis.BeginCapture(1_000_000);
+            var sequence = 0u;
+            void Send(byte kind, Dictionary<byte, object?> values, long at) => analysis.Add(Frame(kind, values, at, ++sequence));
+            var character = Guid.NewGuid();
+            Send(3, new() { [253] = (byte)2, [0] = 10, [1] = character.ToByteArray(), [2] = "Alpha", [8] = "@RANDOMDUNGEON@one", [66] = "1315" }, 1_100_000);
+            void Hit(float delta, long at) => Send(4, new() { [252] = (byte)6, [0] = 30, [6] = 10, [2] = delta, [7] = -1, [5] = (byte)0 }, at);
+            analysis.StartRecord(2_000_000);
+            Hit(-100, 3_000_000);
+            var before = analysis.Snapshot().Combat!;
+            // The capture source ends by itself: the service pauses the record, restarts the capture keeping what it knew, and resumes.
+            analysis.SetPaused(true, 4_000_000);
+            analysis.BeginCapture(7_000_000, preserveRecord: true, keepIdentities: true);
+            analysis.SetPaused(false, 7_000_000);
+            Hit(-50, 8_000_000);
+            var after = analysis.Snapshot().Combat!;
+            Assert(analysis.RecordState == "running" && after.Id == before.Id);
+            Assert(after.TotalDamage == 150 && after.Members.Any(member => member.Name == "Alpha" && member.Damage == 150));
+        });
+    }
     private static CaptureFrame Frame(byte kind, Dictionary<byte, object?> values, long at, uint sequence)
     {
         using var stream = new MemoryStream(); using var writer = new BinaryWriter(stream);

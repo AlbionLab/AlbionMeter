@@ -13,7 +13,7 @@ jobs:
       builds: ${{ steps.plan.outputs.builds }}
       releases: ${{ steps.plan.outputs.releases }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           sparse-checkout: Directory.Build.props
           sparse-checkout-cone-mode: false
@@ -46,13 +46,13 @@ jobs:
         include: ${{ fromJSON(needs.plan.outputs.builds) }}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ matrix.ref }}
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
@@ -70,7 +70,7 @@ jobs:
           npm ci --prefix desktop
           cd desktop
           npx electron-builder ${{ matrix.runtime == 'win-x64' && '--win' || '--linux' }} --x64 --publish never -c.extraMetadata.version=$version
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: albion-meter-${{ matrix.tag }}-${{ matrix.runtime }}
           path: |
@@ -93,7 +93,7 @@ jobs:
         include: ${{ fromJSON(needs.plan.outputs.releases) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: packages
           pattern: albion-meter-${{ matrix.tag }}-*

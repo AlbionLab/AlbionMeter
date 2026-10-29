@@ -6,17 +6,48 @@ on:
 permissions:
   contents: write
 jobs:
+  # Builds the current version and, on main, every tag that has no release yet, so a lost release is rebuilt from its tag.
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      builds: ${{ steps.plan.outputs.builds }}
+      releases: ${{ steps.plan.outputs.releases }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: Directory.Build.props
+          sparse-checkout-cone-mode: false
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BACKFILL: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        run: |
+          current=v$(grep -oP '(?<=<Version>)[^<]+' Directory.Build.props)
+          releases='[]'
+          if [ "$BACKFILL" = true ]; then
+            existing=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName --jq '.[].tagName')
+            for tag in $(gh api "repos/$GITHUB_REPOSITORY/tags" --paginate --jq '.[].name' | sort -V); do
+              if [ "$tag" != "$current" ] && ! grep -qxF "$tag" <<< "$existing"; then
+                releases=$(jq -c --arg tag "$tag" '. + [{tag: $tag, ref: $tag, latest: false}]' <<< "$releases")
+              fi
+            done
+          fi
+          releases=$(jq -c --arg tag "$current" --arg ref "$GITHUB_SHA" '. + [{tag: $tag, ref: $ref, latest: true}]' <<< "$releases")
+          builds=$(jq -c '[.[] as $release | ({os: "ubuntu-latest", runtime: "linux-x64"}, {os: "windows-latest", runtime: "win-x64"}) | . + {tag: $release.tag, ref: $release.ref}]' <<< "$releases")
+          echo "releases=$releases" >> "$GITHUB_OUTPUT"
+          echo "builds=$builds" >> "$GITHUB_OUTPUT"
   build:
+    name: build ${{ matrix.tag }} ${{ matrix.runtime }}
+    needs: plan
     strategy:
+      fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            runtime: linux-x64
-          - os: windows-latest
-            runtime: win-x64
+        include: ${{ fromJSON(needs.plan.outputs.builds) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.ref }}
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
@@ -24,12 +55,12 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-          cache-dependency-path: |
-            web/package-lock.json
-            desktop/package-lock.json
+          cache-dependency-path: '*/package-lock.json'
       - run: npm ci --prefix web
       - run: node scripts/publish.mjs ${{ matrix.runtime }}
+      # Tags older than the desktop app only have the zip and tar.gz packages.
       - name: Desktop app
+        if: hashFiles('desktop/package.json') != ''
         shell: bash
         run: |
           version=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props | head -1)
@@ -40,7 +71,7 @@ jobs:
           npx electron-builder ${{ matrix.runtime == 'win-x64' && '--win' || '--linux' }} --x64 --publish never -c.extraMetadata.version=$version
       - uses: actions/upload-artifact@v4
         with:
-          name: albion-meter-${{ matrix.runtime }}
+          name: albion-meter-${{ matrix.tag }}-${{ matrix.runtime }}
           path: |
             artifacts/*.zip
             artifacts/*.tar.gz
@@ -49,32 +80,41 @@ jobs:
             desktop/dist/*.AppImage
             desktop/dist/*.deb
             desktop/dist/latest*.yml
+  # One release at a time, oldest first, so the current version is published last and stays the latest.
   release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: build
+    name: release ${{ matrix.tag }}
+    if: always() && needs.plan.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [plan, build]
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.releases) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          sparse-checkout: Directory.Build.props
-          sparse-checkout-cone-mode: false
-      - id: version
-        run: echo "value=$(grep -oP '(?<=<Version>)[^<]+' Directory.Build.props)" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
           path: packages
-          merge-multiple: true
+          pattern: albion-meter-${{ matrix.tag }}-*
       - name: Flatten packages
-        run: find packages -mindepth 2 -type f -exec mv -t packages {} + && find packages -mindepth 1 -type d -empty -delete
+        env:
+          TAG: ${{ matrix.tag }}
+        run: |
+          for runtime in linux-x64 win-x64; do
+            test -d "packages/albion-meter-$TAG-$runtime" || { echo "The $runtime build of $TAG is missing."; exit 1; }
+          done
+          find packages -mindepth 2 -type f -exec mv -t packages {} + && find packages -mindepth 1 -type d -empty -delete
       - run: sha256sum * > SHA256SUMS.txt
         working-directory: packages
-      - name: Publish release v${{ steps.version.outputs.value }}
+      - name: Publish release ${{ matrix.tag }}
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: v${{ steps.version.outputs.value }}
+          TAG: ${{ matrix.tag }}
+          REF: ${{ matrix.ref }}
+          LATEST: ${{ matrix.latest }}
         run: |
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             gh release upload "$TAG" packages/* --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$TAG" packages/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Albion Meter $TAG" --generate-notes --latest
+            gh release create "$TAG" packages/* --repo "$GITHUB_REPOSITORY" --target "$REF" --title "Albion Meter $TAG" --generate-notes --latest="$LATEST"
           fi

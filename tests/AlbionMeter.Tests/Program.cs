@@ -1,3 +1,4 @@
+using AlbionLab.Protocol;
 using AlbionMeter.Core;
 using AlbionMeter.Server;
 using Microsoft.Extensions.Configuration;
@@ -493,5 +494,18 @@ MembershipGapChecks.Run(Test, True);
 CaptureChecks.Run(Test, True, args.Contains("--native-capture"));
 Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
 Directory.Delete(temporaryDirectory, true);
+Test("The suggested session name describes the runs, the shared entrance and the party, or the solo player", () =>
+{
+    SourceMember Member(string id, string name, string family = "Holy Staff") => new(id, name, "Weapon", family, "#ffffff");
+    SourceSnapshot Record(params SourceMember[] members) => new("r", DateTimeOffset.UnixEpoch, 60, "running", 1, members, [], [], []);
+    SourceDungeon Run(string name, string? entrance) => new(Guid.NewGuid().ToString(), name, DateTimeOffset.UnixEpoch, "running", entrance, []);
+    var party = Enumerable.Range(1, 18).Select(index => Member($"p{index}", $"Player{index}")).ToArray();
+    True(AlbionLabService.SuggestTitle("p1", Record(party), [Run("Random dungeon", "Hightree Cliffs")]) == "Random dungeon · Hightree Cliffs · 18 players");
+    True(AlbionLabService.SuggestTitle("k", Record(Member("k", "KPey")), [Run("Expedition", null), Run("Expedition", null)]) == "Expedition ×2 · solo");
+    True(AlbionLabService.SuggestTitle("k", Record(Member("k", "KPey", "Cursed Staff")), []) == "KPey solo · Cursed Staff");
+    True(AlbionLabService.SuggestTitle("k", Record(Member("k", "KPey", "unknown")), []) == "KPey solo");
+    True(AlbionLabService.SuggestTitle("p1", Record(party[..5]), []) == "Group fight · 5 players");
+});
+
 Console.WriteLine($"{count - failures.Count}/{count} checks passed.");
 return failures.Count == 0 ? 0 : 1;

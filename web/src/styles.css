@@ -648,7 +648,10 @@ dd { margin: 0; color: var(--text-2); font-family: var(--mono); font-size: 12px;
 .ui-select-list li[aria-selected="true"] { color: var(--accent); font-weight: 600; }
 .ui-select-list li[aria-disabled="true"] { opacity: 0.4; cursor: not-allowed; }
 
-.albionlab-name { width: 100%; }
+.albionlab-name { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.name-suggestion { align-self: flex-start; max-width: 100%; overflow: hidden; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.name-suggestion strong { color: var(--text-2); font-weight: 600; }
+.name-suggestion:hover strong { color: var(--accent); }
 .albionlab-name input { flex: 1; max-width: 420px; height: 32px; padding: 0 11px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; }
 .albionlab-name input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(249, 135, 20, 0.16); }
 .desktop .mini-bar { flex-wrap: nowrap; height: 52px; padding: 0 0 0 20px; -webkit-app-region: drag; user-select: none; }

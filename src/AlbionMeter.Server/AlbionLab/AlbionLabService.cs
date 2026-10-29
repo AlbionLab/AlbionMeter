@@ -12,7 +12,7 @@ namespace AlbionMeter.Server;
 public sealed record AlbionLabAccount(string Name, string AvatarUrl);
 public sealed record AlbionLabPairing(string Code, string VerifyUrl, DateTimeOffset ExpiresAt);
 public sealed record AlbionLabSession(string Id, string Url, string Visibility, bool Anonymize, string State, string? Error, DateTimeOffset? PublishedAt, string? Title = null);
-public sealed record AlbionLabStatus(string Server, bool Connected, AlbionLabAccount? Account, AlbionLabPairing? Pairing, string? PairingError, AlbionLabSession? Session, bool ShareLocation, string Visibility, bool Anonymize);
+public sealed record AlbionLabStatus(string Server, bool Connected, AlbionLabAccount? Account, AlbionLabPairing? Pairing, string? PairingError, AlbionLabSession? Session, bool ShareLocation, string Visibility, bool Anonymize, string? SuggestedTitle = null);
 
 public sealed class AlbionLabService(IConfiguration configuration, MeterSession meter, CaptureService capture, CombatSourceCatalog sources, MapCatalog catalog, ILogger<AlbionLabService> logger) : BackgroundService
 {
@@ -64,7 +64,30 @@ public sealed class AlbionLabService(IConfiguration configuration, MeterSession 
     {
         lock (gate)
             return new(server, Current.DeviceToken is not null, Current.DeviceToken is null ? null : new(Current.AccountName ?? "", Current.AvatarUrl ?? ""),
-                pairing is { } pending && pending.ExpiresAt > DateTimeOffset.UtcNow ? pending : null, pairingError, session, Current.ShareLocation, Current.Visibility, Current.Anonymize);
+                pairing is { } pending && pending.ExpiresAt > DateTimeOffset.UtcNow ? pending : null, pairingError, session, Current.ShareLocation, Current.Visibility, Current.Anonymize,
+                lastPublished is { } published ? SuggestTitle(published.Self, published.Record, published.Dungeons) : null);
+    }
+
+    /// <summary>
+    /// A session name from what was recorded: the dungeon or expedition runs, their entrance when the location is shared
+    /// (unshared runs carry none), and the party size; without runs, the recording player and weapon family.
+    /// </summary>
+    public static string? SuggestTitle(string? self, SourceSnapshot record, IReadOnlyList<SourceDungeon> runs)
+    {
+        var count = record.Members.Count;
+        var party = count <= 1 ? "solo" : $"{count} players";
+        string title;
+        if (runs.Count > 0)
+        {
+            var names = string.Join(" + ", runs.GroupBy(run => run.Name).Select(group => group.Count() > 1 ? $"{group.Key} ×{group.Count()}" : group.Key));
+            var entrance = runs.Select(run => run.Entrance).FirstOrDefault(name => !string.IsNullOrWhiteSpace(name));
+            title = string.Join(" · ", new[] { names, entrance, party }.Where(part => !string.IsNullOrWhiteSpace(part)));
+        }
+        else if (count > 1) title = $"Group fight · {party}";
+        else if ((record.Members.FirstOrDefault(member => member.Id == self) ?? record.Members.FirstOrDefault()) is { } player)
+            title = player.Family is { Length: > 0 } family && family is not ("unknown" or "seen in combat") ? $"{player.Name} solo · {family}" : $"{player.Name} solo";
+        else return null;
+        return title.Length > 80 ? title[..80] : title;
     }
 
     static string Server(string? configured)

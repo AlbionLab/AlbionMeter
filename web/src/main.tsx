@@ -17,7 +17,7 @@ type Status = {
   server: string; connected: boolean; account: { name: string; avatarUrl: string } | null;
   pairing: { code: string; verifyUrl: string; expiresAt: string } | null; pairingError: string | null;
   session: { id: string; url: string; visibility: string; anonymize: boolean; state: string; error: string | null; publishedAt: string | null; title: string | null } | null;
-  shareLocation: boolean; visibility: string; anonymize: boolean;
+  shareLocation: boolean; visibility: string; anonymize: boolean; suggestedTitle: string | null;
 };
 
 const post = async <T,>(path: string, body?: unknown): Promise<T> => {
@@ -40,12 +40,16 @@ function WeaponIcon({ player }: { player: Player }) {
   return <span className="bar-icon" title={player.weapon}>{id ? <img src={`/api/weapon-icon/${encodeURIComponent(id)}`} alt="" /> : <span>?</span>}</span>;
 }
 
-function SessionName({ title, save }: { title: string | null; save: (title: string) => void }) {
+/** The session's name on AlbionLab, with a name suggested from what was recorded that can be applied with one click. */
+function SessionName({ title, suggestion, save }: { title: string | null; suggestion: string | null; save: (title: string) => void }) {
   const [value, setValue] = useState(title ?? '');
   useEffect(() => setValue(title ?? ''), [title]);
   const commit = () => { if (value.trim() !== (title ?? '')) save(value.trim()); };
-  return <label className="albionlab-field albionlab-name"><span>Name</span><input value={value} maxLength={80} placeholder="Untitled session" aria-label="Session name"
-    onChange={event => setValue(event.target.value)} onBlur={commit} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { setValue(title ?? ''); event.currentTarget.blur(); } }} /></label>;
+  return <div className="albionlab-name">
+    <label className="albionlab-field"><span>Name</span><input value={value} maxLength={80} placeholder={suggestion ?? 'Untitled session'} aria-label="Session name"
+      onChange={event => setValue(event.target.value)} onBlur={commit} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { setValue(title ?? ''); event.currentTarget.blur(); } }} /></label>
+    {suggestion && suggestion !== value.trim() && <button type="button" className="name-suggestion" onClick={() => { setValue(suggestion); save(suggestion); }} title="Use this name">Suggestion: <strong>{suggestion}</strong></button>}
+  </div>;
 }
 
 function AlbionLabCard({ recording }: { recording: boolean }) {
@@ -98,7 +102,7 @@ function AlbionLabCard({ recording }: { recording: boolean }) {
           <a className="button primary" href={session.url} target="_blank" rel="noreferrer">Open full analysis</a>
         </div>
         {session.error && <p className="albionlab-error">{session.error}</p>}
-        <SessionName key={session.id} title={session.title} save={title => void run(() => post('/api/albionlab/session', { title }))} />
+        <SessionName key={session.id} title={session.title} suggestion={status.suggestedTitle} save={title => void run(() => post('/api/albionlab/session', { title }))} />
       </> : <div className="albionlab-session">
         <span className="publish-state"><i />{recording ? 'Creating the session…' : 'No live session'}</span>
         <span className="muted">{recording ? 'The live session on AlbionLab is being created.' : 'Press Play: each record becomes a new live session on AlbionLab, and Stop ends it.'}</span>

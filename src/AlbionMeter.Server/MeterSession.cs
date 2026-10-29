@@ -19,9 +19,15 @@ public sealed class MeterSession(EncounterStore store, MapCatalog? catalog = nul
     {
         if (status?.Report?.Combat is not { } combat) return null;
         var rosterConfirmed = status.Report?.Party?.IsConfirmedSince(status.Report.FirstTimestampMicroseconds) == true;
-        PlayerStats Resolve(PlayerStats player) => player with { Membership = player.Id == status.Report?.Character?.CharacterId.ToString() || rosterConfirmed ? "active" : "unconfirmed", Weapon = (Guid.TryParse(player.Id, out var playerId) ? catalog?.WeaponName(status.Report?.Weapons?.GetValueOrDefault(playerId)) : null) ?? (player.Weapon.StartsWith("Item #", StringComparison.Ordinal) && int.TryParse(player.Weapon[6..], out var index) ? catalog?.WeaponName(index) : null) ?? player.Weapon };
+        PlayerStats Resolve(PlayerStats player)
+        {
+            var known = Guid.TryParse(player.Id, out var playerId);
+            var weapon = known ? status.Report?.Weapons?.GetValueOrDefault(playerId) : ItemNumber(player.Weapon);
+            return player with { Membership = player.Id == status.Report?.Character?.CharacterId.ToString() || rosterConfirmed ? "active" : "unconfirmed", Weapon = (known ? catalog?.WeaponName(weapon) : null) ?? (ItemNumber(player.Weapon) is { } index ? catalog?.WeaponName(index) : null) ?? player.Weapon, WeaponFamily = catalog?.WeaponFamily(weapon) ?? player.WeaponFamily };
+        }
         return combat with { Mode = status.Source == "replay" ? "replay" : "live", Status = status.Report?.RecordState ?? (status.Report?.RecordPaused == true ? "paused" : status.State is "running" or "starting" ? "running" : "completed"), Members = combat.Members.Select(Resolve).ToArray(), FormerMembers = combat.FormerMembers?.Select(player => Resolve(player) with { Membership = "left" }).ToArray(), ItemContributions = combat.ItemContributions?.Select(item => item with { Item = (item.TierObserved ? sources?.ItemName(item.ItemIndex) : sources?.FamilyName(item.ItemIndex)) ?? item.Item }).ToArray(), WeaponContributions = combat.WeaponContributions?.Select(weapon => weapon with { Weapon = catalog?.WeaponName(weapon.WeaponIndex) ?? weapon.Weapon }).ToArray() };
     }
+    private static int? ItemNumber(string weapon) => weapon.StartsWith("Item #", StringComparison.Ordinal) && int.TryParse(weapon[6..], out var index) ? index : null;
     private CombatSnapshot Current(bool full) => Live() ?? (_empty.Snapshot(full, "idle") with { Mode = "unavailable", Location = null, PartyId = null });
 
     private DateTimeOffset _lastDungeonSave;
@@ -39,8 +45,8 @@ public sealed class MeterSession(EncounterStore store, MapCatalog? catalog = nul
         {
             PlayerStats ResolvePlayer(PlayerStats player) => player with
             {
-                Weapon = player.Weapon.StartsWith("Item #", StringComparison.Ordinal) && int.TryParse(player.Weapon[6..], out var index)
-                    ? catalog?.WeaponName(index) ?? player.Weapon : player.Weapon
+                Weapon = ItemNumber(player.Weapon) is { } index ? catalog?.WeaponName(index) ?? player.Weapon : player.Weapon,
+                WeaponFamily = catalog?.WeaponFamily(ItemNumber(player.Weapon)) ?? player.WeaponFamily
             };
             return snapshot with
             {

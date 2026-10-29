@@ -26,6 +26,18 @@ public sealed class MapCatalog
         var weapon = Data?.IndexedWeapons?.FirstOrDefault(value => value.Index == index);
         return weapon is null ? $"Item #{index}" : $"{weapon.Name} · T{weapon.Tier}.{weapon.Enchantment}";
     }
+    private static readonly Dictionary<string, string> FamilyNames = new()
+    {
+        ["arcanestaff"] = "Arcane Staff", ["axe"] = "Axe", ["bow"] = "Bow", ["crossbow"] = "Crossbow", ["cursestaff"] = "Cursed Staff",
+        ["dagger"] = "Dagger", ["firestaff"] = "Fire Staff", ["froststaff"] = "Frost Staff", ["hammer"] = "Hammer", ["holystaff"] = "Holy Staff",
+        ["knuckles"] = "War Gloves", ["mace"] = "Mace", ["naturestaff"] = "Nature Staff", ["quarterstaff"] = "Quarterstaff",
+        ["shapeshifterstaff"] = "Shapeshifter Staff", ["spear"] = "Spear", ["sword"] = "Sword",
+    };
+    public string? WeaponFamily(int? index)
+    {
+        var family = index is > 0 ? Data?.IndexedWeapons?.FirstOrDefault(value => value.Index == index)?.Family : null;
+        return family is null or "unknown" ? null : FamilyNames.GetValueOrDefault(family, family);
+    }
     public string ResolveName(string id) => Find(id)?.Name ?? id;
     public void Save(MapCatalogData data)
     {

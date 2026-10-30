@@ -8,6 +8,7 @@ public sealed class MeterSession(EncounterStore store, MapCatalog? catalog = nul
     private readonly CombatEngine _empty = new([]);
     private double _lastSaved;
     private string? _lastLiveId;
+    private DateTimeOffset _lastLiveStart;
     private long _lastLiveSequence = -1;
     private string? _lastLiveStatus;
     private CombatSnapshot? Live()
@@ -150,7 +151,8 @@ public sealed class MeterSession(EncounterStore store, MapCatalog? catalog = nul
             SaveIdentities();
             SaveLiveDungeons();
             if (Live() is not { } live) return null;
-            if (_lastLiveId != live.Id) { _lastLiveId = live.Id; _lastLiveSequence = -1; _lastSaved = 0; }
+            // A Reset keeps the id but starts the record again from zero: the 30-second saves count from the new start.
+            if (_lastLiveId != live.Id || _lastLiveStart != live.StartedAt) { _lastLiveId = live.Id; _lastLiveStart = live.StartedAt; _lastLiveSequence = -1; _lastSaved = 0; }
             if (_lastLiveSequence == live.Sequence && _lastLiveStatus == live.Status) return null;
             _lastLiveStatus = live.Status;
             _lastLiveSequence = live.Sequence;

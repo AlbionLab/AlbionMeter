@@ -72,9 +72,12 @@ public sealed class CaptureService(IConfiguration configuration, CharacterContex
             _liveAnalysis ??= CreateLiveAnalysis();
             var restartCapture = current.State != "running" || current.Source != "live-capture";
             if (_liveAnalysis.RecordState is "running" or "paused") throw new InvalidOperationException("Stop the current record before starting another one.");
-            if (restartCapture) _liveAnalysis.BeginCapture(preserveRecord: true);
+            if (restartCapture) _liveAnalysis.BeginCapture(preserveRecord: true, keepIdentities: _reconnecting);
             _liveAnalysis.StartRecord(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000);
-            if (restartCapture) Start(device, recordPrepared: true, resumeRecord: true);
+            // A capture that cannot start leaves no record "running" without packets: Play is available again.
+            if (restartCapture)
+                try { Start(device, recordPrepared: true, resumeRecord: true); }
+                catch { _liveAnalysis.StopRecord(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000); throw; }
             var next = Status with { Report = _liveAnalysis.Snapshot() };
             Publish(next); return next;
         }
@@ -196,6 +199,8 @@ public sealed class CaptureService(IConfiguration configuration, CharacterContex
             lock (_analysisGate)
             {
                 if (!token.IsCancellationRequested && !permission) HoldRecord(analysis);
+                // Without permission the capture does not come back by itself: the record ends instead of waiting forever.
+                else if (permission && analysis.RecordState is "running" or "paused") analysis.StopRecord(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000);
                 Complete(new("failed", "live-capture", null, exception.Message, analysis.Snapshot(), null, null, "error"));
             }
             if (permission) Console.Error.WriteLine($"Packet capture failed: {exception.Message}");
@@ -295,10 +300,12 @@ public sealed class CaptureService(IConfiguration configuration, CharacterContex
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
     }
     private bool _reconnecting, _resumeAfterReconnect;
-    /// <summary>Pauses a record whose capture dropped, remembering whether to continue it once the capture is back.</summary>
+    /// <summary>
+    /// Marks a capture that dropped so its restart keeps every identity it knew, with or without a record, and pauses a
+    /// running record, remembering to continue it once the capture is back.
+    /// </summary>
     private void HoldRecord(CaptureAnalysis analysis)
     {
-        if (analysis.RecordState is not ("running" or "paused")) return;
         _reconnecting = true;
         _resumeAfterReconnect = analysis.RecordState == "running";
         if (_resumeAfterReconnect) analysis.SetPaused(true, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000);

@@ -88,7 +88,7 @@ public sealed class CaptureService(IConfiguration configuration, CharacterContex
             _reconnecting = false; _resumeAfterReconnect = false;
             Publish(Status with { Report = _liveAnalysis.Snapshot() });
         }
-        StopAsync().GetAwaiter().GetResult();
+        // Stop ends the record, not the capture: it keeps reading the game, so the next Play already knows every player.
         var current = Status;
         archive(current);
         return current;

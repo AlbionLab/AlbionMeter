@@ -49,7 +49,8 @@ try {
   assert.equal((await json('/api/session')).id, first.id);
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
   await page.getByRole('button', { name: 'Play', exact: true }).waitFor();
-  assert.equal((await json('/api/capture/status')).state, 'completed');
+  // Stop ends the record only: the capture keeps running, so the next Play still knows every player.
+  assert.equal((await json('/api/capture/status')).state, 'running');
   assert.equal((await json('/api/session')).status, 'completed');
   assert.ok((await json('/api/encounters')).some(record => record.id === first.id));
   assert.equal((await post('/api/session/resume-record')).status, 409);

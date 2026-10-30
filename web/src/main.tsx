@@ -22,7 +22,7 @@ type Status = {
 
 const post = async <T,>(path: string, body?: unknown): Promise<T> => {
   const response = await fetch(path, { method: 'POST', headers: { 'X-Albion-Meter': 'local', ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
-  const value = await response.json();
+  const value = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(value.error ?? 'Request failed.');
   return value as T;
 };
@@ -58,7 +58,7 @@ function AlbionLabCard({ recording }: { recording: boolean }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     let disposed = false;
-    const load = () => fetch('/api/albionlab').then(response => response.json()).then(value => { if (!disposed) setStatus(value); }).catch(() => undefined);
+    const load = () => fetch('/api/albionlab').then(response => response.ok ? response.json() : undefined).then(value => { if (!disposed && value) setStatus(value); }).catch(() => undefined);
     void load();
     const timer = setInterval(load, 2000);
     return () => { disposed = true; clearInterval(timer); };
@@ -113,7 +113,7 @@ function AlbionLabCard({ recording }: { recording: boolean }) {
           options={[{ value: 'unlisted', label: 'Unlisted — anyone with the link' }, { value: 'public', label: 'Public — listed on AlbionLab' }, { value: 'private', label: 'Private — only me' }]} /></div>
         <label className="check"><input type="checkbox" checked={session?.anonymize ?? status.anonymize} onChange={event => void run(() => post('/api/albionlab/session', { anonymize: event.target.checked }))} />Hide other players' names</label>
       </div>
-      {session?.error && !session.id && <p className="albionlab-error">{session.error}</p>}
+      {!session && status.session?.error && <p className="albionlab-error">{status.session.error}</p>}
       <div className="albionlab-options">
         <label className="check"><input type="checkbox" checked={status.shareLocation} onChange={event => void run(() => post('/api/albionlab/location', { shareLocation: event.target.checked }))} />Share dungeon location (map names)</label>
         <button className="link-button" onClick={() => { if (window.confirm('Disconnect this PC from your AlbionLab account?')) void run(() => post('/api/albionlab/disconnect')); }}>Disconnect account</button>

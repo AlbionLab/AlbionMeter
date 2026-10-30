@@ -38,7 +38,7 @@ export function useMeter() {
     setError(null);
     try {
       const response = await fetch(`/api/session/${action}`, { method: 'POST', headers: { 'X-Albion-Meter': 'local' } });
-      if (!response.ok) throw new Error((await response.json()).error ?? 'The session could not be updated.');
+      if (!response.ok) throw new Error((await response.json().catch(() => ({})) as { error?: string }).error ?? 'The session could not be updated.');
       const next = await response.json() as Snapshot;
       setSnapshot(previous => mergeSnapshot(previous, next));
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'The server is unavailable.'); }

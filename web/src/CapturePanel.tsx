@@ -17,6 +17,8 @@ export function CapturePanel() {
   const [method, setMethod] = useState('socket');
   const [status, setStatus] = useState<CaptureStatus | null>(null);
   const [error, setError] = useState('');
+  // Kept apart from command errors: a status poll that fails while the server restarts clears itself on the next success.
+  const [pollError, setPollError] = useState('');
   const [busy, setBusy] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const [granting, setGranting] = useState(false);
@@ -44,8 +46,8 @@ export function CapturePanel() {
         const response = await fetch('/api/capture/status');
         if (!response.ok) throw new Error('Capture status is unavailable.');
         const value = await response.json();
-        if (!disposed) setStatus(value);
-      } catch (reason) { if (!disposed) setError(String(reason)); }
+        if (!disposed) { setStatus(value); setPollError(''); }
+      } catch (reason) { if (!disposed) setPollError(String(reason)); }
       finally { pending = false; }
     }
     void update(); const timer = setInterval(() => void update(), 1000);
@@ -76,7 +78,7 @@ export function CapturePanel() {
     } finally { setGranting(false); }
   }
   const active = status && ['starting', 'running', 'stopping'].includes(status.state);
-  const failure = `${error} ${status?.error ?? ''} ${devices?.error ?? ''}`;
+  const failure = `${error} ${pollError} ${status?.error ?? ''} ${devices?.error ?? ''}`;
   const permissionHint = /CAP_NET_RAW|permission|npcap|wpcap/i.test(failure);
   const setcap = `sudo setcap cap_net_raw=ep ${host?.executable ?? './AlbionMeter.Server'}`;
   const report = status?.report;
@@ -105,7 +107,7 @@ export function CapturePanel() {
         </div>
       </div>
       {devices?.error && <p className="capture-note" role="status">Capture interface access: {devices.error}</p>}
-      {(error || status?.error) && <p className="error-banner" role="alert">{error || status?.error}</p>}
+      {(error || status?.error || pollError) && <p className="error-banner" role="alert">{error || status?.error || pollError}</p>}
       {permissionHint && <div className="capture-hint">{host?.platform === 'windows'
         ? <p>Close Albion Meter and open it again as administrator (right-click AlbionMeter.Server.exe, Run as administrator). Packet capture uses a Windows raw socket and needs no driver.</p>
         : desktop ? <div className="capture-hint-grant"><p>Albion Meter needs permission to read the game traffic. Allow it once with your system password and capture starts right away.</p><button className="button primary" disabled={granting} onClick={() => void grant()}>{granting ? 'Waiting for permission…' : 'Allow packet capture'}</button></div>

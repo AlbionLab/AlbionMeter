@@ -83,3 +83,7 @@ test('A reset of the same record replaces it even with a lower sequence', () => 
   const reset = snapshot({ sequence: 2, startedAt: '2026-01-01T00:05:00Z', totalDamage: 0, status: 'paused', timeline: [] });
   assert.equal(mergeSnapshot(snapshot(), reset), reset);
 });
+test('A delayed update from before a Reset of the same record is ignored', () => {
+  const reset = snapshot({ sequence: 2, startedAt: '2026-01-01T00:05:00Z', totalDamage: 0, timeline: [] });
+  assert.equal(mergeSnapshot(reset, snapshot({ sequence: 50 })), reset);
+});

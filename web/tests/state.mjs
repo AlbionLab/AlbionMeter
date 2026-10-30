@@ -79,3 +79,7 @@ test('Cursor navigation handles aggregated buckets and stops at actual recording
   assert.deepEqual(revealTimelineInterval(2000, 10, 1000, 120, 100, 220), { second: 1000, offset: 0 });
   assert.deepEqual(revealTimelineInterval(12, 5, 20, 30, 0, 30), { second: 10, offset: 0 });
 });
+test('A reset of the same record replaces it even with a lower sequence', () => {
+  const reset = snapshot({ sequence: 2, startedAt: '2026-01-01T00:05:00Z', totalDamage: 0, status: 'paused', timeline: [] });
+  assert.equal(mergeSnapshot(snapshot(), reset), reset);
+});

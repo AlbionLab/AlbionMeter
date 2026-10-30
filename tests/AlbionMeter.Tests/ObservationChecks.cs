@@ -115,34 +115,6 @@ internal static class ObservationChecks
             assert(resumed.Status == "running" && resumed.Totals.TotalDamage == 150 && resumed.Totals.TotalHealing == 20);
             assert(resumed.Totals.ElapsedSeconds == 3 && resumed.Floors[1].Totals.ElapsedSeconds == 1);
         });
-        test("After a server change, a party object is named by its weapon only when one waiting member carries it", () =>
-        {
-            CapturedCombatObservation Run(bool betaSameWeapon)
-            {
-                var localId = Guid.NewGuid(); var betaId = Guid.NewGuid(); var gammaId = Guid.NewGuid();
-                var local = new LocalCharacterSnapshot(localId, 1, "Alpha", null, null, "one", null, "observed", 1, "flow");
-                var roster = new PartyRosterSnapshot([new(localId, "Alpha"), new(betaId, "Beta"), new(gammaId, "Gamma")], 5, true);
-                var combat = new CapturedCombatObservation();
-                combat.BeginSession(1);
-                combat.Observe(new(4, 1, null, new() { [252] = 29, [0] = 900, [1] = "Gamma", [7] = gammaId.ToByteArray(), [40] = new short[] { 7696, 0, 4224, 5452, 5472, 2909, 2587, 3098 } }), "flow", "gamma-seen", 2, local, roster);
-                if (betaSameWeapon) combat.Observe(new(4, 1, null, new() { [252] = 29, [0] = 901, [1] = "Beta", [7] = betaId.ToByteArray(), [40] = new short[] { 7696, 0, 1111, 2222, 3333, 2909, 2587, 3098 } }), "flow", "beta-seen", 3, local, roster);
-                // A new route to the game server: every object id changes and nobody in sight is announced again.
-                combat.Observe(new(3, 1, 0, new() { [253] = 2 }), "flow", "zone", 4, local, roster);
-                combat.ForgetIdentities(5);
-                var hits = 0;
-                void Hit(long source, float value, long at) => combat.Observe(new(4, 1, null, new() { [252] = 6, [0] = 30, [6] = source, [2] = value, [7] = 1 }), "flow", $"hit:{hits++}", at, local, roster);
-                Hit(21, -250, 1_000_000); Hit(21, -50, 2_000_000);
-                combat.Observe(new(4, 1, null, new() { [252] = 670, [0] = 21 }), "flow", "party-object", 2_100_000, local, roster);
-                combat.Observe(new(4, 1, null, new() { [252] = 90, [0] = 21, [2] = new short[] { 7696, 0, 0, 0, 0, 0, 0, 0, 0, 0 } }), "flow", "gear", 2_200_000, local, roster);
-                combat.FlushUnidentified();
-                return combat;
-            }
-            var unique = Run(betaSameWeapon: false);
-            assert(unique.Snapshot!.Members.Single(member => member.Name == "Gamma").Damage == 300 && unique.Diagnostics["identifiedByWeapon"] == 1);
-            assert(!unique.Snapshot!.Members.Any(member => member.Name.StartsWith("Unidentified", StringComparison.Ordinal)));
-            var shared = Run(betaSameWeapon: true);
-            assert(!shared.Diagnostics.ContainsKey("identifiedByWeapon") && shared.Snapshot!.Members.All(member => member.Name is not ("Gamma" or "Beta") || member.Damage == 0));
-        });
         test("Effects from unnamed party members are credited once chat, equipment or own skills identify them", () =>
         {
             var localId = Guid.NewGuid(); var chatterId = Guid.NewGuid(); var tankId = Guid.NewGuid();

@@ -768,6 +768,32 @@ public sealed class CapturedCombatObservation(CombatSourceCatalog? sources = nul
             Count("gearFromInspection");
         }
     }
+    /// <summary>
+    /// The last chance before a party object is listed as unidentified: when the weapon it was seen with is carried by
+    /// exactly one party member not yet in combat (the local player included, whose own gear is known), and by no other
+    /// object still waiting, that object is that member. Common after a server or route change (ExitLag, a VPN): every
+    /// object id changes and the players already in sight are never announced again.
+    /// </summary>
+    private void MatchByWeapon()
+    {
+        if (_engine is null) return;
+        var waiting = _unresolved.Where(pair => pair.Value.Count > 0 && _partyObjects.ContainsKey(pair.Key) && !(_entities.TryGetValue(pair.Key, out var entity) && entity.Id is not null))
+            .Select(pair => (pair.Key, Effects: pair.Value, Weapon: _unresolvedGear.TryGetValue(pair.Key, out var observed) && observed.Gear.FirstOrDefault() is > 0 and var worn ? worn : (int?)null))
+            .Where(entry => entry.Weapon is not null).ToArray();
+        var present = _entities.Values.Select(entity => entity.Id).ToHashSet();
+        foreach (var (key, effects, weapon) in waiting)
+        {
+            if (waiting.Count(other => other.Weapon == weapon) > 1) continue;
+            var open = OpenCandidates(effects).AsEnumerable();
+            if (_localId is { } local && !present.Contains(local)) open = open.Append(local);
+            var matches = open.Where(member => _characters.TryGetValue(member, out var character) && character.Weapon == weapon).ToArray();
+            if (matches is not [var member]) continue;
+            var known = _characters[member];
+            Identify(key, known with { Revision = Math.Max(known.Revision, _identitiesSince) }, "weaponMatch");
+            present.Add(member);
+            Count("identifiedByWeapon");
+        }
+    }
     private Entity? Fingerprint((string Connection, long ObjectId) key, int?[] equipment)
     {
         if (!_partyObjects.ContainsKey(key) || equipment.Take(8).Count(slot => slot is not null) < 7) return null;
@@ -809,6 +835,7 @@ public sealed class CapturedCombatObservation(CombatSourceCatalog? sources = nul
             Count("identifiedByElimination");
         }
         var possible = PossibleIdentities();
+        MatchByWeapon();
         if (_engine is not null)
             foreach (var ((connection, objectId), effects) in _unresolved)
             {

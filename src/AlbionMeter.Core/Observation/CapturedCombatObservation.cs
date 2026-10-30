@@ -11,6 +11,25 @@ public sealed class CapturedCombatObservation(CombatSourceCatalog? sources = nul
 {
     private sealed record Entity(Guid? Id, string Name, string Kind, int? Weapon, long Revision, int?[]? Equipment = null, int?[]? Spells = null, long WeaponSeen = 0, long GearSeen = 0);
     private readonly Dictionary<(string Connection, long ObjectId), Entity> _entities = [];
+    /// <summary>A player the meter knows on the current map: which game object is which character.</summary>
+    public sealed record KnownPlayer(string Connection, long ObjectId, Guid Id, string Name, int? Weapon, int?[]? Equipment);
+    public KnownPlayer[] KnownPlayers() => [.. _entities.Where(pair => pair.Value is { Kind: "player", Id: not null })
+        .Select(pair => new KnownPlayer(pair.Key.Connection, pair.Key.ObjectId, pair.Value.Id!.Value, pair.Value.Name, pair.Value.Weapon, pair.Value.Equipment))];
+    /// <summary>
+    /// The players known before the meter was closed, on the same map and game connection: their objects are named again
+    /// at once instead of waiting for the next zone change. They come back as old observations (revision 0), so a zone
+    /// change still replaces them with what the game announces.
+    /// </summary>
+    public void RestorePlayers(IEnumerable<KnownPlayer> players)
+    {
+        foreach (var player in players)
+        {
+            if (_entities.ContainsKey((player.Connection, player.ObjectId))) continue;
+            var entity = new Entity(player.Id, player.Name, "player", player.Weapon, 0, player.Equipment);
+            _entities[(player.Connection, player.ObjectId)] = entity;
+            _characters.TryAdd(player.Id, entity);
+        }
+    }
     private readonly Dictionary<Guid, Entity> _characters = [];
     private readonly Dictionary<(string Connection, long ObjectId), (int Weapon, long Timestamp, int?[] Equipment, int?[] Spells)> _pendingEquipment = [];
     private readonly Dictionary<string, long> _diagnostics = [];
@@ -245,8 +264,11 @@ public sealed class CapturedCombatObservation(CombatSourceCatalog? sources = nul
         {
             if (_localId is not null) { _entities.Clear(); _characters.Clear(); _roster.Clear(); _engine = null; }
             _localId = local.CharacterId;
+            // A character known from before (restored) is listed right away, without waiting for a zone change.
+            if (_characters.ContainsKey(local.CharacterId)) Synchronize();
         }
-        if (local is not null && local.Connection != _connection)
+        // A character restored from the last session has no connection yet; that is not a move to another server.
+        if (local is { Connection.Length: > 0 } && local.Connection != _connection)
         {
             _connection = local.Connection;
             foreach (var key in _entities.Keys.Where(key => key.Connection != local.Connection).ToArray()) _entities.Remove(key);

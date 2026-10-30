@@ -36,6 +36,35 @@ public sealed class CharacterContextStore
         catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException) { }
     }
     public LocalCharacterSnapshot? Snapshot { get { lock (_gate) return _character; } }
+
+    /// <summary>Who is who on the current map, saved while capturing so a restarted meter does not have to learn it again.</summary>
+    public sealed record KnownPlayers(DateTimeOffset SavedAt, Guid CharacterId, string? MapId, string Connection, CapturedCombatObservation.KnownPlayer[] Players);
+    private string KnownPlayersPath => Path.Combine(Path.GetDirectoryName(_path)!, "known-players.json");
+    public void ObservePlayers(LocalCharacterSnapshot character, CapturedCombatObservation.KnownPlayer[] players)
+    {
+        if (players.Length == 0) return;
+        try
+        {
+            var value = new KnownPlayers(DateTimeOffset.UtcNow, character.CharacterId, character.MapId, character.Connection, [.. players.Take(200)]);
+            Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+            File.WriteAllText(KnownPlayersPath + ".tmp", JsonSerializer.Serialize(value, JsonOptions));
+            File.Move(KnownPlayersPath + ".tmp", KnownPlayersPath, true);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { StorageError = exception.Message; }
+    }
+    /// <summary>The saved players, only when they are recent and from the map and connection the character was last seen on.</summary>
+    public CapturedCombatObservation.KnownPlayer[] RecentPlayers(LocalCharacterSnapshot character)
+    {
+        try
+        {
+            if (!File.Exists(KnownPlayersPath)) return [];
+            var value = JsonSerializer.Deserialize<KnownPlayers>(File.ReadAllText(KnownPlayersPath), JsonOptions);
+            if (value is null || DateTimeOffset.UtcNow - value.SavedAt > TimeSpan.FromMinutes(5)) return [];
+            if (value.CharacterId != character.CharacterId || value.MapId != character.MapId || value.Connection != character.Connection) return [];
+            return value.Players;
+        }
+        catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException) { return []; }
+    }
     public string? StorageError { get; private set; }
     public PartyRosterSnapshot? Party { get { lock (_gate) return _party; } }
     public void ObserveParty(PartyRosterSnapshot value)

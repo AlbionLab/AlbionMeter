@@ -53,7 +53,9 @@ public sealed class CaptureAnalysis(CombatSourceCatalog? sources = null, bool ma
         {
             _combat.ForgetIdentities(since);
             _dungeons.ForgetIdentities(since);
+            if (_restoredPlayers is { } restored) { _combat.RestorePlayers(restored); _dungeons.RestorePlayers(restored); }
         }
+        _restoredPlayers = null;
         if (!preserveRecord)
         {
             var paused = _combat.IsPaused;
@@ -84,6 +86,15 @@ public sealed class CaptureAnalysis(CombatSourceCatalog? sources = null, bool ma
         RecordState = paused ? "paused" : "running";
     }
     public void RestoreCharacter(LocalCharacterSnapshot character) => _character.Restore(character);
+    public CapturedCombatObservation.KnownPlayer[] KnownPlayers() => _combat.KnownPlayers();
+    // Players restored at startup survive the first capture start, which otherwise forgets every identity.
+    private IReadOnlyList<CapturedCombatObservation.KnownPlayer>? _restoredPlayers;
+    public void RestorePlayers(IReadOnlyList<CapturedCombatObservation.KnownPlayer> players)
+    {
+        if (players.Count == 0) return;
+        _restoredPlayers = players;
+        _combat.RestorePlayers(players); _dungeons.RestorePlayers(players);
+    }
     public bool RestoreParty(PartyRosterSnapshot value)
     {
         if (!_party.Restore(value)) return false;

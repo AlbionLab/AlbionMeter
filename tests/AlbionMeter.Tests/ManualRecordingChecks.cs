@@ -94,6 +94,28 @@ internal static class ManualRecordingChecks
             Assert(analysis.RecordState == "paused" && analysis.Snapshot().Combat!.TotalDamage == 0 && analysis.Snapshot().Combat!.Id == id);
         });
     }
+    public static void RunRestart(Action<string, Action> test)
+    {
+        test("A meter reopened on the same map names the players it knew before closing", () =>
+        {
+            void Assert(bool condition, [System.Runtime.CompilerServices.CallerLineNumber] int line = 0) { if (!condition) throw new Exception($"Restart assertion at line {line}"); }
+            var sequence = 0u;
+            var character = Guid.NewGuid();
+            var before = new CaptureAnalysis(manualRecording: true);
+            before.BeginCapture(1_000_000);
+            before.Add(Frame(3, new() { [253] = (byte)2, [0] = 10, [1] = character.ToByteArray(), [2] = "Alpha", [8] = "@RANDOMDUNGEON@one", [66] = "1315" }, 1_100_000, ++sequence));
+            var known = before.KnownPlayers();
+            Assert(known.Any(player => player.Name == "Alpha" && player.ObjectId == 10));
+            // The meter closes and opens again in the middle of the same floor: no zone change announces the players.
+            var after = new CaptureAnalysis(manualRecording: true);
+            after.RestoreCharacter(before.Snapshot().Character!);
+            after.RestorePlayers(known);
+            after.BeginCapture(5_000_000);
+            after.StartRecord(6_000_000);
+            after.Add(Frame(4, new() { [252] = (byte)6, [0] = 30, [6] = 10, [2] = -70f, [7] = -1, [5] = (byte)0 }, 7_000_000, ++sequence));
+            Assert(after.Snapshot().Combat!.Members.Any(member => member.Name == "Alpha" && member.Damage == 70));
+        });
+    }
     private static CaptureFrame Frame(byte kind, Dictionary<byte, object?> values, long at, uint sequence)
     {
         using var stream = new MemoryStream(); using var writer = new BinaryWriter(stream);

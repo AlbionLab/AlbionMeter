@@ -50,7 +50,7 @@ public sealed class CaptureService(IConfiguration configuration, CharacterContex
     {
         var analysis = new CaptureAnalysis(sources, manualRecording: true);
         if (store is not null) { analysis.SeedCharacters(store.KnownCharacters()); analysis.SeedSkillWeapons(store.KnownSkillWeapons()); }
-        if (_characterContext.Snapshot is { } character) analysis.RestoreCharacter(character);
+        if (_characterContext.Snapshot is { } character) { analysis.RestoreCharacter(character); analysis.RestorePlayers(_characterContext.RecentPlayers(character)); }
         if (_characterContext.Party is { } party) analysis.RestoreParty(party);
         return analysis;
     }
@@ -161,6 +161,7 @@ public sealed class CaptureService(IConfiguration configuration, CharacterContex
             var library = PacketCapture.Library(device);
             var clock = Stopwatch.StartNew();
             var nextPublish = 0d;
+            var nextPlayers = 10d;
             var reason = "stopped";
             while (!token.IsCancellationRequested)
             {
@@ -169,6 +170,11 @@ public sealed class CaptureService(IConfiguration configuration, CharacterContex
                 {
                     lock (_analysisGate) analysis.Add(frame);
                     debug.Add(frame);
+                }
+                if (clock.Elapsed.TotalSeconds >= nextPlayers)
+                {
+                    lock (_analysisGate) if (analysis.Snapshot().Character is { } character) _characterContext.ObservePlayers(character, analysis.KnownPlayers());
+                    nextPlayers = clock.Elapsed.TotalSeconds + 10;
                 }
                 if (clock.Elapsed.TotalSeconds >= nextPublish)
                 {

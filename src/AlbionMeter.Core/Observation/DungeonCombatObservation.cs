@@ -54,6 +54,7 @@ public sealed class DungeonCombatObservation(CombatSourceCatalog? sources = null
         ResetRecording(timestamp, recordId);
         _combat.Carry(members);
     }
+    public void RestorePlayers(IEnumerable<CapturedCombatObservation.KnownPlayer> players) => _combat.RestorePlayers(players);
     private long _lastFrame;
     private const long CaptureGapMicroseconds = 30_000_000;
     private static bool IsDungeon(string? map) => Kind(map) is not null;

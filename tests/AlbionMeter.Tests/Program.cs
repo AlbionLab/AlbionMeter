@@ -489,6 +489,7 @@ Test("A newly observed member cannot claim contributions from before joining", (
 ManualRecordingChecks.Run(Test, True);
 ManualRecordingChecks.RunCaptureDrop(Test);
 ManualRecordingChecks.RunReset(Test);
+ManualRecordingChecks.RunRestart(Test);
 PacketStorageChecks.Run(Test, True);
 HistoryChecks.Run(Test, True);
 ObservationChecks.Run(Test, True);

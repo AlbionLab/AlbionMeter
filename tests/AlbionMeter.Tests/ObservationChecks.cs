@@ -363,18 +363,32 @@ internal static class ObservationChecks
         {
             var localId = Guid.NewGuid(); var memberId = Guid.NewGuid(); var otherId = Guid.NewGuid();
             var roster = new PartyRosterSnapshot([new(localId, "Alpha"), new(memberId, "Beta"), new(otherId, "Gamma")], 1, true);
+            var local = new LocalCharacterSnapshot(localId, 452, "Alpha", null, null, "one", null, "observed", 1, "flow");
             var combat = new CapturedCombatObservation();
             combat.BeginSession(1);
-            void Event(Dictionary<byte, object?> parameters, long at) => combat.Observe(new(4, 1, null, parameters), "flow", $"event:{at}", at, null, roster);
+            void Event(Dictionary<byte, object?> parameters, long at) => combat.Observe(new(4, 1, null, parameters), "flow", $"event:{at}", at, local, roster);
             Event(new() { [252] = 6, [0] = 30, [6] = 552, [2] = -120f }, 1_000_000);
             Event(new() { [252] = 90, [0] = 552, [2] = new short[] { 9317, 2403, 4299, 5447, 4203, 2908, 2712, 3098, 0, 0 } }, 1_100_000);
-            Event(new() { [252] = 670, [0] = 552, [1] = localId.ToByteArray() }, 1_200_000);
+            Event(new() { [252] = 670, [0] = 552 }, 1_200_000);
             assert(combat.Snapshot!.TotalDamage == 0);
             Event(new() { [252] = 244, [0] = otherId.ToByteArray(), [2] = new short[] { 7114, 0, 5342, 4997, 5397, 2900, 2837, 3098, 0, 0 } }, 1_300_000);
             Event(new() { [252] = 244, [0] = memberId.ToByteArray(), [2] = new short[] { 9317, 2403, 4299, 5447, 4203, 2908, 2541, 3098, 0, 0 } }, 1_400_000);
             assert(combat.Snapshot!.TotalDamage == 0 && !combat.Diagnostics.ContainsKey("identifiedByEquipment"));
             Event(new() { [252] = 244, [0] = memberId.ToByteArray(), [2] = new short[] { 9317, 2403, 4299, 5447, 4203, 2908, 2712, 3098, 0, 0 } }, 1_500_000);
             assert(combat.Snapshot!.Members.Single(member => member.Name == "Beta").Damage == 120 && combat.Diagnostics["identifiedByEquipment"] == 1);
+        });
+        test("A party object event never names the local player: its id field belongs to another member", () =>
+        {
+            var localId = Guid.NewGuid(); var memberId = Guid.NewGuid();
+            var roster = new PartyRosterSnapshot([new(localId, "Alpha"), new(memberId, "Beta")], 1, true);
+            var combat = new CapturedCombatObservation();
+            combat.BeginSession(1);
+            // As captured after a reconnect whose Join was missed: the local object 104 comes with the other member's id.
+            combat.Observe(new(4, 1, null, new() { [252] = 670, [0] = 104L, [1] = memberId.ToByteArray() }), "flow", "party-object", 1_000_000, null, roster);
+            combat.ObserveOwnCast(new(2, 1, null, new() { [253] = 24, [0] = 555L, [4] = 3925, [8] = 1 }), 2_000_000);
+            combat.Observe(new(4, 1, null, new() { [252] = 18, [0] = 104L, [1] = 30, [2] = 3925, [4] = 1, [5] = 555L }), "flow", "echo", 2_050_000, null, roster);
+            combat.Observe(new(4, 1, null, new() { [252] = 6, [0] = 30, [6] = 104L, [2] = -70f, [7] = (short)3925 }), "flow", "hit", 2_100_000, null, roster);
+            assert(combat.Snapshot!.Members.All(member => member.Name != "Beta" || member.Damage == 0));
         });
         test("After a capture restart the local object is confirmed only by the echo of an own cast request", () =>
         {

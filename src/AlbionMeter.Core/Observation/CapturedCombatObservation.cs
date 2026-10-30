@@ -369,7 +369,8 @@ public sealed class CapturedCombatObservation(CombatSourceCatalog? sources = nul
         }
         if (code == 670 && Integer(Field(0)) is { } partyObject)
         {
-            if (_localId is null && Field(1) is byte[] { Length: 16 } owner) _localId = new Guid(owner);
+            // Field 1 is not the object's owner: captured 670s pair each member's object with the other member's id. The local
+            // player is named only by the Join, never by a guess from here.
             var partyKey = (connection, partyObject);
             if (_partyObjects.Count < 1024 || _partyObjects.ContainsKey(partyKey))
             {

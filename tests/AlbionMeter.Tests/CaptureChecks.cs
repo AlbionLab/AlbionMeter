@@ -24,6 +24,38 @@ internal static class CaptureChecks
             }
             finally { Directory.Delete(directory, true); }
         });
+        test("The Linux kernel filter keeps exactly the packets the meter reads", () =>
+        {
+            if (!OperatingSystem.IsLinux()) return;
+            var random = new Random(7);
+            var packets = new List<byte[]>();
+            foreach (var protocol in new byte[] { 17, 6, 1 })
+                foreach (var header in new[] { 20, 24, 60 })
+                    foreach (var (source, destination) in new[] { (5056, 40000), (40000, 5055), (5058, 1), (443, 50000), (5057, 5054), (53, 53) })
+                        foreach (var fragment in new ushort[] { 0, 0x4000, 0x2000, 0x0010 })
+                        {
+                            var packet = new byte[header + 16];
+                            packet[0] = (byte)(0x40 | header / 4); packet[9] = protocol;
+                            BinaryPrimitives.WriteUInt16BigEndian(packet.AsSpan(6), fragment);
+                            BinaryPrimitives.WriteUInt16BigEndian(packet.AsSpan(header), (ushort)source);
+                            BinaryPrimitives.WriteUInt16BigEndian(packet.AsSpan(header + 2), (ushort)destination);
+                            packets.Add(packet);
+                        }
+            packets.Add([0x60, 0, 0, 0, 0, 8, 17, 64, .. new byte[40]]);
+            packets.Add([0x00, 1, 8, 0, 6, 4, 0, 1, .. new byte[20]]);
+            for (var index = 0; index < 2000; index++)
+            {
+                // Well formed as the kernel delivers them: never shorter than their own IP header.
+                var header = random.Next(5, 16);
+                var packet = new byte[header * 4 + random.Next(0, 40)];
+                random.NextBytes(packet);
+                packet[0] = (byte)(0x40 | header);
+                if (index % 2 == 0) packet[9] = 17;
+                packets.Add(packet);
+            }
+            foreach (var packet in packets)
+                assert(Accepts(LinuxSocketCapture.Filter, packet) == PacketCapture.IsAlbionPacket(packet));
+        });
         test("IPv4 UDP payloads preserve endpoints and timestamps", () =>
         {
             var frame = Frame(Ip(Udp([1, 2, 3])));
@@ -292,4 +324,27 @@ internal static class CaptureChecks
     }
     private static void Put16(byte[] bytes, int offset, ushort value) => BinaryPrimitives.WriteUInt16BigEndian(bytes.AsSpan(offset), value);
     private static void Put32(byte[] bytes, int offset, uint value) => BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(offset), value);
+
+    /// <summary>A classic BPF interpreter for the instructions the Linux filter uses; a read past the packet drops it, as in the kernel.</summary>
+    static bool Accepts((ushort Code, byte True, byte False, uint Value)[] program, byte[] packet)
+    {
+        uint a = 0, x = 0;
+        for (var pc = 0; pc < program.Length; pc++)
+        {
+            var (code, jumpTrue, jumpFalse, value) = program[pc];
+            switch (code)
+            {
+                case 0x30: if (value >= packet.Length) return false; a = packet[value]; break;
+                case 0x28: if (value + 2 > packet.Length) return false; a = BinaryPrimitives.ReadUInt16BigEndian(packet.AsSpan((int)value)); break;
+                case 0x48: if (x + value + 2 > packet.Length) return false; a = BinaryPrimitives.ReadUInt16BigEndian(packet.AsSpan((int)(x + value))); break;
+                case 0xb1: if (value >= packet.Length) return false; x = (uint)(packet[value] & 0x0f) * 4; break;
+                case 0x54: a &= value; break;
+                case 0x15: pc += a == value ? jumpTrue : jumpFalse; break;
+                case 0x45: pc += (a & value) != 0 ? jumpTrue : jumpFalse; break;
+                case 0x06: return value != 0;
+                default: throw new InvalidOperationException($"Unknown BPF code {code:x}");
+            }
+        }
+        return false;
+    }
 }

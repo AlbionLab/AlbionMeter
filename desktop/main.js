@@ -142,6 +142,20 @@ function request(method, route, timeout = 2000) {
 }
 
 const healthy = async () => (await request('GET', '/api/health')) === 200;
+
+/** The version of whatever capture service answers on the port, or null when none does. */
+function serverVersion() {
+  return new Promise(resolve => {
+    const call = http.get(`${origin}/api/health`, { timeout: 2000 }, response => {
+      let body = '';
+      response.setEncoding('utf8');
+      response.on('data', chunk => { body += chunk; });
+      response.on('end', () => { try { resolve(JSON.parse(body).version ?? null); } catch { resolve(null); } });
+    });
+    call.on('timeout', () => call.destroy());
+    call.on('error', () => resolve(null));
+  });
+}
 const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 const run = (file, args) => new Promise(resolve => execFile(file, args, (error, stdout) => resolve(error ? null : stdout)));
 
@@ -180,7 +194,15 @@ async function linuxServer() {
 }
 
 async function startServer() {
-  if (await healthy()) return;
+  if (await healthy()) {
+    // A service of this version that this app started is reused; anything else (an older version left running, a
+    // copy started by hand) is asked to stop, so the app always talks to its own service and can restart it.
+    if (!app.isPackaged || (server && await serverVersion() === app.getVersion())) return;
+    log(`stopping a capture service this app did not start (version ${await serverVersion()})`);
+    await request('POST', '/api/shutdown');
+    for (let attempt = 0; attempt < 40 && await healthy(); attempt++) await wait(250);
+    if (await healthy()) throw new Error('Another capture service is using port 5187 and did not stop.');
+  }
   const { folder, executable: file } = needsPermission ? await linuxServer() : bundledServer();
   executable = file;
   fs.mkdirSync(logFolder(), { recursive: true });
@@ -206,7 +228,11 @@ function stopServer() {
     const running = server;
     const exited = new Promise(resolve => running.once('exit', resolve));
     await request('POST', '/api/shutdown');
-    if (await Promise.race([exited.then(() => true), wait(10000).then(() => false)]) === false) running.kill();
+    if (await Promise.race([exited.then(() => true), wait(10000).then(() => false)]) === false) {
+      running.kill();
+      if (await Promise.race([exited.then(() => true), wait(5000).then(() => false)]) === false) running.kill('SIGKILL');
+    }
+    if (server === running) server = null;
   })().finally(() => { stopping = null; });
   return stopping;
 }
@@ -236,7 +262,20 @@ async function boot() {
   }
 }
 
+const restarts = [];
+
 async function crashed(code) {
+  // A crash in the middle of a run restarts the service by itself (twice in ten minutes at most): the window stays and
+  // reconnects, and the capture goes on without waiting for someone to notice.
+  while (restarts.length && Date.now() - restarts[0] > 10 * 60 * 1000) restarts.shift();
+  if (restarts.length < 2 && !booting) {
+    restarts.push(Date.now());
+    log(`restarting the capture service after code ${code}`);
+    booting = true;
+    try { await wait(1000); await startServer(); return; }
+    catch (error) { log(`automatic restart failed: ${error.message}`); }
+    finally { booting = false; }
+  }
   savePlacement();
   if (!splashWindow) await createSplash();
   if (window && !window.isDestroyed()) window.destroy();
@@ -309,6 +348,7 @@ function watchUpdates() {
   autoUpdater.on('update-downloaded', info => setUpdate({ state: 'ready', version: info.version }));
   autoUpdater.on('error', error => {
     log(`update failed: ${error?.message ?? error}`);
+    if (update.state === 'installing') return installFailed();
     if (update.state !== 'ready') setUpdate({ state: 'error', message: 'The update could not be downloaded. It will be tried again later.' });
   });
   const check = () => autoUpdater.checkForUpdates().catch(error => log(`update check failed: ${error?.message ?? error}`));
@@ -356,7 +396,18 @@ ipcMain.on('desktop:update', async (_event, action) => {
   leaving = true;
   await stopServer();
   autoUpdater.quitAndInstall(true, true);
+  // Still running long after asking to install (a cancelled password prompt, a package manager error): bring the
+  // service back on this version instead of leaving the window without it.
+  setTimeout(() => { if (update.state === 'installing') installFailed(); }, 20000);
 });
+
+async function installFailed() {
+  log('the update was not installed; starting the service again');
+  leaving = false;
+  setUpdate({ state: 'error', message: 'The update could not be installed. The meter keeps running on this version.' });
+  try { await startServer(); }
+  catch (error) { log(`restart after a failed install: ${error.message}`); crashed(null); }
+}
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();

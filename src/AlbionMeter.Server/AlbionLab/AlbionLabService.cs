@@ -40,6 +40,11 @@ public sealed class AlbionLabService(IConfiguration configuration, MeterSession 
     string? recordId;
     string? finishedRecord;
     AlbionLabSession? session;
+    // A failed create waits before the next try, longer each time, instead of asking the site every second.
+    DateTimeOffset nextCreate;
+    int failedCreates;
+    // The "completed" of a session that could not be sent yet (hub reconnecting, network down); retried on each tick.
+    (string Id, SessionDelta Delta, int Attempts)? pendingFinish;
     (DateTimeOffset StartedAt, string? Self, SourceSnapshot Record, List<SourceSnapshot> Encounters, List<SourceDungeon> Dungeons)? lastPublished;
 
     Settings Current
@@ -151,8 +156,9 @@ public sealed class AlbionLabService(IConfiguration configuration, MeterSession 
         if (response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellation);
-            lock (gate) session = current with { Visibility = body.GetProperty("visibility").GetString()!, Anonymize = body.GetProperty("anonymize").GetBoolean(), Title = body.TryGetProperty("title", out var named) && named.ValueKind == JsonValueKind.String ? named.GetString() : null };
+            lock (gate) session = current with { Visibility = body.GetProperty("visibility").GetString()!, Anonymize = body.GetProperty("anonymize").GetBoolean(), Title = body.TryGetProperty("title", out var named) && named.ValueKind == JsonValueKind.String ? named.GetString() : null, Error = null };
         }
+        else lock (gate) if (session?.Id == current.Id) session = session with { Error = $"AlbionLab did not save the change ({(int)response.StatusCode})." };
         return Status();
     }
 
@@ -164,6 +170,7 @@ public sealed class AlbionLabService(IConfiguration configuration, MeterSession 
             try
             {
                 await PollPairing(stoppingToken);
+                await SendPendingFinish(stoppingToken);
                 await Publish(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
@@ -209,14 +216,15 @@ public sealed class AlbionLabService(IConfiguration configuration, MeterSession 
         if (record.Id != recordId)
         {
             if (recordId is not null) await FinishPrevious(token, cancellation);
-            if (record.Status == "completed") return;
+            if (record.Status == "completed" || DateTimeOffset.UtcNow < nextCreate) return;
             await CreateSession(token, record, cancellation);
+            if (recordId != record.Id) return;
         }
         // Reset keeps the record but starts it again from zero (a new start time): the session is sent again in full.
         else if (publishedStart is { } start && start != record.StartedAt) lock (gate) compactor.Reset();
         publishedStart = record.StartedAt;
         var connection = await Hub(token, cancellation);
-        if (connection is null || session is null) return;
+        if (connection is null || session is not { Id.Length: > 0 }) return;
         var self = capture.Status.Report?.Character?.CharacterId.ToString();
         var share = Current.ShareLocation;
         var runs = meter.Dungeons().Where(run => run.StartedAt >= record.StartedAt - TimeSpan.FromSeconds(5)).ToList();
@@ -240,8 +248,18 @@ public sealed class AlbionLabService(IConfiguration configuration, MeterSession 
         }
         catch (HubException error)
         {
-            lock (gate) { compactor.Reset(); session = session with { State = "error", Error = error.Message }; }
-            if (error.Message.Contains("ended", StringComparison.Ordinal)) finishedRecord = record.Id;
+            // The site no longer has this session (deleted, or ended while the meter was away): a record still going on
+            // gets a new session on the next tick, sent in full, instead of failing on the old one until Stop.
+            var gone = error.Message.Contains("Session not found.", StringComparison.Ordinal) || error.Message.Contains("This session has ended.", StringComparison.Ordinal);
+            var lost = session.Id;
+            lock (gate)
+            {
+                compactor.Reset();
+                if (gone && record.Status != "completed") { recordId = null; session = null; lastPublished = null; finishedRecord = null; publishedStart = null; }
+                else session = session with { State = "error", Error = error.Message };
+                if (gone && record.Status == "completed") finishedRecord = record.Id;
+            }
+            if (gone) logger.LogInformation("AlbionLab session {Session} is gone ({Reason}); the record continues in a new one", lost, error.Message);
         }
     }
 
@@ -255,12 +273,45 @@ public sealed class AlbionLabService(IConfiguration configuration, MeterSession 
             if (previous is { Id.Length: > 0, State: not "completed" } && finishedRecord != recordId && lastPublished is { } last)
                 delta = compactor.Next("completed", last.StartedAt, last.Self, last.Record, last.Encounters, last.Dungeons);
         }
-        if (delta is not null && previous is not null && await Hub(token, cancellation) is { } connection)
-        {
-            try { await connection.InvokeAsync<long>("Publish", previous.Id, delta, cancellation); }
-            catch (HubException) { }
-        }
+        if (delta is not null && previous is not null)
+            lock (gate) pendingFinish = (previous.Id, delta, 0);
         lock (gate) { finishedRecord = recordId; recordId = null; session = null; lastPublished = null; compactor = new SessionCompactor(); }
+        await SendPendingFinish(cancellation);
+    }
+
+    /// <summary>Sends the waiting "completed", keeping it for the next tick when the hub is not there, for about two minutes.</summary>
+    async Task SendPendingFinish(CancellationToken cancellation)
+    {
+        (string Id, SessionDelta Delta, int Attempts)? pending;
+        string? token;
+        lock (gate) (pending, token) = (pendingFinish, Current.DeviceToken);
+        if (pending is not { } finish || token is null) return;
+        try
+        {
+            if (await Hub(token, cancellation) is not { } connection) throw new InvalidOperationException("The hub is not connected.");
+            await connection.InvokeAsync<long>("Publish", finish.Id, finish.Delta, cancellation);
+            lock (gate) pendingFinish = null;
+        }
+        catch (HubException) { lock (gate) pendingFinish = null; }
+        catch (Exception error) when (error is InvalidOperationException or HttpRequestException or IOException or TimeoutException)
+        {
+            lock (gate) pendingFinish = finish.Attempts >= 120 ? null : finish with { Attempts = finish.Attempts + 1 };
+        }
+    }
+
+    /// <summary>Closing the meter ends its live session on the site instead of leaving it to time out.</summary>
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        await base.StopAsync(cancellationToken);
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(3));
+            string? token;
+            lock (gate) token = Current.DeviceToken;
+            if (token is not null && recordId is not null) await FinishPrevious(token, timeout.Token);
+        }
+        catch (Exception error) when (error is OperationCanceledException or HttpRequestException or InvalidOperationException) { }
     }
 
     async Task CreateSession(string token, CombatSnapshot record, CancellationToken cancellation)
@@ -271,14 +322,24 @@ public sealed class AlbionLabService(IConfiguration configuration, MeterSession 
         if (response.StatusCode == HttpStatusCode.Unauthorized) { await Disconnect(); lock (gate) pairingError = "revoked"; return; }
         if (!response.IsSuccessStatusCode)
         {
-            var reason = (await response.Content.ReadFromJsonAsync<JsonElement>(cancellation)).TryGetProperty("error", out var error) ? error.GetString() : response.StatusCode.ToString();
-            lock (gate) session = new("", "", "unlisted", false, "error", reason, null);
+            string? reason;
+            try { reason = (await response.Content.ReadFromJsonAsync<JsonElement>(cancellation)).TryGetProperty("error", out var error) ? error.GetString() : null; }
+            catch (JsonException) { reason = null; }
+            reason ??= $"AlbionLab answered {(int)response.StatusCode}.";
+            lock (gate)
+            {
+                session = new("", "", "unlisted", false, "error", reason, null);
+                failedCreates++;
+                nextCreate = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(Math.Min(60, 5 * failedCreates));
+            }
             return;
         }
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellation);
         lock (gate)
         {
             recordId = record.Id;
+            failedCreates = 0;
+            nextCreate = default;
             compactor = new SessionCompactor();
             session = new(body.GetProperty("id").GetString()!, body.GetProperty("url").GetString()!, body.GetProperty("visibility").GetString()!,
                 body.GetProperty("anonymize").GetBoolean(), "live", null, null);

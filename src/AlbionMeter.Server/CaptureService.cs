@@ -179,6 +179,7 @@ public sealed class CaptureService(IConfiguration configuration, CharacterContex
                 if (clock.Elapsed.TotalSeconds >= nextPublish)
                 {
                     debug.Flush();
+                    lock (_analysisGate) analysis.AdvanceClock(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000);
                     lock (_analysisGate) Publish(new("running", "live-capture", null, null, analysis.Snapshot(), capture.Statistics(), library, null));
                     nextPublish = clock.Elapsed.TotalSeconds + 0.2;
                 }

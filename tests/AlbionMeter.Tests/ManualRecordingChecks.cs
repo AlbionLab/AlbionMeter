@@ -40,6 +40,30 @@ internal static class ManualRecordingChecks
             Assert(analysis.Snapshot().Combat!.TotalDamage == 10 && analysis.Snapshot().Combat!.TotalHealing == 0 && analysis.Snapshot().Dungeons!.Single().Totals.TotalDamage == 10);
         });
     }
+    public static void RunClock(Action<string, Action> test)
+    {
+        test("The record clock runs from Play without packets and stays frozen while paused", () =>
+        {
+            void Assert(bool condition, [System.Runtime.CompilerServices.CallerLineNumber] int line = 0) { if (!condition) throw new Exception($"Clock assertion at line {line}"); }
+            var analysis = new CaptureAnalysis(manualRecording: true);
+            analysis.BeginCapture(1_000_000);
+            analysis.AdvanceClock(1_500_000);
+            Assert(analysis.Snapshot().Combat is null || analysis.Snapshot().Combat!.ElapsedSeconds == 0);
+            analysis.StartRecord(2_000_000);
+            analysis.AdvanceClock(7_000_000);
+            Assert(analysis.Snapshot().Combat!.ElapsedSeconds == 5);
+            analysis.SetPaused(true, 8_000_000);
+            Assert(analysis.Snapshot().Combat!.ElapsedSeconds == 6);
+            analysis.AdvanceClock(20_000_000);
+            Assert(analysis.Snapshot().Combat!.ElapsedSeconds == 6);
+            analysis.SetPaused(false, 30_000_000);
+            analysis.AdvanceClock(33_000_000);
+            Assert(analysis.Snapshot().Combat!.ElapsedSeconds == 9);
+            // A packet stamped a little before the last tick never moves the clock back.
+            analysis.AdvanceClock(32_000_000);
+            Assert(analysis.Snapshot().Combat!.ElapsedSeconds == 9);
+        });
+    }
     public static void RunCaptureDrop(Action<string, Action> test)
     {
         test("A capture that drops and comes back keeps the same record and its players", () =>

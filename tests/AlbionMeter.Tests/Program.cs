@@ -487,6 +487,7 @@ Test("A newly observed member cannot claim contributions from before joining", (
     Equal(25, engine.Snapshot(true).TotalDamage);
 });
 ManualRecordingChecks.Run(Test, True);
+ManualRecordingChecks.RunClock(Test);
 ManualRecordingChecks.RunCaptureDrop(Test);
 ManualRecordingChecks.RunReset(Test);
 ManualRecordingChecks.RunRestart(Test);

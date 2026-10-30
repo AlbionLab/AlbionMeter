@@ -85,6 +85,11 @@ public sealed class CaptureAnalysis(CombatSourceCatalog? sources = null, bool ma
         _dungeons.SetPaused(paused, timestamp);
         RecordState = paused ? "paused" : "running";
     }
+    /// <summary>
+    /// Moves the record's clock to the given time without a packet: live, the encounter time runs from Play even while the
+    /// game sends nothing (login screen, loading, standing still), and a paused record stays frozen.
+    /// </summary>
+    public void AdvanceClock(long timestamp) { if (RecordState == "running") _combat.AdvanceTo(timestamp); }
     public void RestoreCharacter(LocalCharacterSnapshot character) => _character.Restore(character);
     public CapturedCombatObservation.KnownPlayer[] KnownPlayers() => _combat.KnownPlayers();
     // Players restored at startup survive the first capture start, which otherwise forgets every identity.

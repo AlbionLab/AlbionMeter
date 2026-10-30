@@ -185,6 +185,21 @@ public sealed class CapturedCombatObservation(CombatSourceCatalog? sources = nul
         _identitiesSince = timestamp;
         _diagnostics.Remove("unresolvedSinceZoneChange"); _diagnostics.Remove("attributedSinceZoneChange");
     }
+    /// <summary>Lists these players in the current session (with nothing counted yet) when they are not in it already.</summary>
+    public void Carry(IEnumerable<PlayerStats> members)
+    {
+        if (_engine is null) return;
+        var known = _engine.Snapshot(false).Members.Select(member => member.Id).ToHashSet();
+        foreach (var member in members)
+            if (known.Add(member.Id)) _engine.RegisterMember(new(member.Id, member.Name, member.Weapon, member.WeaponFamily, member.Color));
+    }
+    /// <summary>Starts counting again from zero in the same session (same id), keeping everyone who was in it listed.</summary>
+    public void Restart(long timestamp)
+    {
+        var previous = _engine?.Snapshot(false);
+        BeginSession(timestamp, previous?.Id);
+        if (previous is not null) Carry(previous.Members);
+    }
     public void BeginSession(long? timestamp = null, string? recordId = null) { if (_engine is not null) FlushUnidentified(); ClearUnidentified(); _awaitingRoster.Clear(); _unsourced.Clear(); _settled.Clear(); _engine = timestamp is null ? null : new([], id: recordId); _start = timestamp ?? 0; _pausedAt = null; _pausedDuration = 0; _diagnostics.Clear(); Synchronize(); }
     public void AdvanceTo(long timestamp)
     {

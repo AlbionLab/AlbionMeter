@@ -40,10 +40,9 @@ public sealed class CaptureAnalysis(CombatSourceCatalog? sources = null, bool ma
     public void ResetCounts(long timestamp)
     {
         if (RecordState is not ("running" or "paused")) throw new InvalidOperationException("There is no active record to reset.");
-        var id = _combat.Snapshot?.Id;
         var paused = RecordState == "paused";
-        _combat.BeginSession(timestamp, id);
-        _dungeons.ResetRecording(timestamp, id ?? _combat.Snapshot!.Id);
+        _combat.Restart(timestamp);
+        _dungeons.ResetCounts(timestamp, _combat.Snapshot!.Id);
         if (paused) { _combat.SetPaused(true, timestamp); _dungeons.SetPaused(true, timestamp); }
     }
     public void BeginCapture(long? timestamp = null, bool preserveRecord = false, bool keepIdentities = false)

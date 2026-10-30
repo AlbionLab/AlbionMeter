@@ -47,6 +47,13 @@ public sealed class DungeonCombatObservation(CombatSourceCatalog? sources = null
         _active.EnterFloor(location.Map, location.Map, FloorName(location.Map));
         _combat.BeginSession(timestamp, Identity($"{_active.Id}:{timestamp}"));
     }
+    /// <summary>Reset: the runs start again from the floor the party is on, keeping that floor's players listed.</summary>
+    public void ResetCounts(long timestamp, string recordId)
+    {
+        var members = _combat.Snapshot?.Members ?? [];
+        ResetRecording(timestamp, recordId);
+        _combat.Carry(members);
+    }
     private long _lastFrame;
     private const long CaptureGapMicroseconds = 30_000_000;
     private static bool IsDungeon(string? map) => Kind(map) is not null;

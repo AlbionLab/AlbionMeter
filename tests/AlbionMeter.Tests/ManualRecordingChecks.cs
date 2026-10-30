@@ -83,6 +83,7 @@ internal static class ManualRecordingChecks
             analysis.ResetCounts(5_000_000);
             var reset = analysis.Snapshot().Combat!;
             Assert(analysis.RecordState == "running" && reset.Id == id && reset.TotalDamage == 0 && reset.TotalHealing == 0);
+            Assert(reset.Members.Any(member => member.Name == "Alpha" && member.Damage == 0));
             Hit(-30, 6_000_000);
             var after = analysis.Snapshot().Combat!;
             Assert(after.Id == id && after.TotalDamage == 30 && after.Members.Any(member => member.Name == "Alpha" && member.Damage == 30));

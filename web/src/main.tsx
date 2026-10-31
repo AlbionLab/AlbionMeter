@@ -122,6 +122,15 @@ function AlbionLabCard({ recording }: { recording: boolean }) {
   </section>;
 }
 
+/** The running capture service's version, the one that decides how packets are read, so a report names it. */
+function useVersion() {
+  const [version, setVersion] = useState<string | null>(null);
+  useEffect(() => {
+    void fetch('/api/health').then(response => response.json()).then((health: { version?: string }) => setVersion(health.version ?? null)).catch(() => undefined);
+  }, []);
+  return version;
+}
+
 function Meter() {
   const { snapshot, connection, error, busy, command, dismissError } = useMeter();
   const [metric, setMetric] = useState<Metric>('damage');
@@ -135,9 +144,10 @@ function Meter() {
   const top = players[0]?.[metric] ?? 0;
   const total = data ? metric === 'damage' ? data.totalDamage : data.totalHealing : 0;
   const unit = metric === 'damage' ? 'DPS' : 'HPS';
+  const version = useVersion();
   return <div className={`mini-shell${desktop ? ' desktop' : ''}`}>
     <header className="mini-bar">
-      <span className="brand"><img src="/mark.svg" alt="" /><span className="brand-name">Albion Meter</span></span>
+      <span className="brand"><img src="/mark.svg" alt="" /><span className="brand-name">Albion Meter</span>{version && <span className="brand-version" title="Albion Meter version">v{version}</span>}</span>
       <nav className="segmented" aria-label="View">
         <button className={view === 'meter' ? 'active' : ''} aria-pressed={view === 'meter'} title="Meter" onClick={() => setView('meter')}><Icon name="activity" size={14} /><span className="nav-label">Meter</span></button>
         <button className={view === 'capture' ? 'active' : ''} aria-pressed={view === 'capture'} title="Capture" onClick={() => setView('capture')}><Icon name="database" size={14} /><span className="nav-label">Capture</span></button>

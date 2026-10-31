@@ -50,6 +50,12 @@ public sealed class Snap
     public List<string>? Members { get; set; }
     public Dictionary<string, string>? Membership { get; set; }
     public SortedDictionary<int, List<double[]>>? Sec { get; set; }
+    /// <summary>
+    /// Set by the site only, never read from a delta: [elapsed second, Unix second at which elapsed was 0], from the
+    /// server's clock when deltas arrive, with a new pair only when that moves (a pause, a drift), so when a second
+    /// happened never depends on the meter's clock.
+    /// </summary>
+    public List<long[]>? Clock { get; set; }
 }
 
 public sealed class FloorInfo

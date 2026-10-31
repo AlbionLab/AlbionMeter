@@ -22,18 +22,25 @@ public sealed class SessionCompactor
     string? dungeonsSent;
     string? statusSent;
     string? recordSent;
+    // Every place of the record so far, kept across resets so a full resend carries them all.
+    readonly SortedDictionary<int, string> places = [];
+    int placesSent;
     long seq;
     bool reset = true;
 
     public void Reset() => reset = true;
 
-    public SessionDelta? Next(string status, DateTimeOffset startedAt, string? self, SourceSnapshot record, IEnumerable<SourceSnapshot> encounters, IReadOnlyList<SourceDungeon> dungeons)
+    public SessionDelta? Next(string status, DateTimeOffset startedAt, string? self, SourceSnapshot record, IEnumerable<SourceSnapshot> encounters, IReadOnlyList<SourceDungeon> dungeons, string? place = null)
     {
         var full = reset;
         if (full)
         {
-            playersSent.Clear(); secondsSent.Clear(); snapsSent.Clear(); dungeonsSent = null; statusSent = null; recordSent = null; keysSent = 0;
+            playersSent.Clear(); secondsSent.Clear(); snapsSent.Clear(); dungeonsSent = null; statusSent = null; recordSent = null; keysSent = 0; placesSent = 0;
         }
+        // A record started again from zero has none of its old places.
+        var second = (int)record.Elapsed;
+        if (places.Count > 0 && places.Keys.Last() > second) { places.Clear(); placesSent = 0; }
+        if (place is { Length: > 0 } && (places.Count == 0 || places.Values.Last() != place)) places[second] = place;
         var delta = new SessionDelta { Reset = full };
         var changed = full;
         if (statusSent != status) { delta.Status = statusSent = status; delta.StartedAt = startedAt; delta.Self = self; changed = true; }
@@ -52,6 +59,12 @@ public sealed class SessionCompactor
             if (compact is not null) { (delta.Snaps ??= [])[snap.Id] = compact; changed = true; }
         }
         if (recordSent != record.Id) { delta.Record = recordSent = record.Id; changed = true; }
+        if (places.Count > placesSent)
+        {
+            delta.Places = places.Skip(placesSent).ToDictionary(pair => pair.Key, pair => pair.Value);
+            placesSent = places.Count;
+            changed = true;
+        }
         var dungeonText = string.Join("|", dungeons.Select(dungeon => $"{dungeon.Id};{dungeon.Name};{dungeon.Status};{dungeon.Entrance};" +
             string.Join(",", dungeon.Floors.Select(floor => $"{floor.Id}:{floor.Number}:{floor.Map}:{string.Join("+", floor.Snaps)}"))));
         if (dungeonsSent != dungeonText)

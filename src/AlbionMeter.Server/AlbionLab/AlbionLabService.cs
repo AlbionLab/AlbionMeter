@@ -205,6 +205,14 @@ public sealed class AlbionLabService(IConfiguration configuration, MeterSession 
         }
     }
 
+    /// <summary>
+    /// The local player's map as a hash: the site only compares places for equality, to find two records that put one
+    /// player in two places at once, and keeps only its own secret-keyed hash of it, never the map.
+    /// </summary>
+    static string? Place(string? map) => map is { Length: > 0 }
+        ? Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes($"albionlab-place\n{map}")))[..24]
+        : null;
+
     DateTimeOffset? publishedStart;
     async Task Publish(CancellationToken cancellation)
     {
@@ -237,7 +245,7 @@ public sealed class AlbionLabService(IConfiguration configuration, MeterSession 
         lock (gate)
         {
             lastPublished = (record.StartedAt, self, source, encounters, dungeons);
-            delta = compactor.Next(record.Status, record.StartedAt, self, source, encounters, dungeons);
+            delta = compactor.Next(record.Status, record.StartedAt, self, source, encounters, dungeons, Place(capture.Status.Report?.Character?.MapId));
         }
         if (delta is null) return;
         try

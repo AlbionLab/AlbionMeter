@@ -89,6 +89,11 @@ public sealed class SessionDelta
     public Dictionary<string, Snap>? Snaps { get; set; }
     public string? Record { get; set; }
     public List<DungeonInfo>? Dungeons { get; set; }
+    /// <summary>
+    /// Record second → a hash of the map the local player was on from then: every player the meter records was on it
+    /// too, so two meters placing one player on two maps at once show a forged record. Only equality is ever compared.
+    /// </summary>
+    public Dictionary<int, string>? Places { get; set; }
 }
 
 public sealed class SessionState

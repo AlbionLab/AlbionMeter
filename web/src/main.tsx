@@ -37,7 +37,18 @@ function WeaponIcon({ player }: { player: Player }) {
     });
     return () => { disposed = true; };
   }, [player.weapon]);
-  return <span className="bar-icon" title={player.weapon}>{id ? <img src={`/api/weapon-icon/${encodeURIComponent(id)}`} alt="" /> : <span>?</span>}</span>;
+  // A failed download (the game's render service timing out or refusing) shows "?" and is tried again a little later.
+  const [failure, setFailure] = useState<{ id: string; attempt: number; waiting: boolean } | null>(null);
+  const attempt = failure?.id === id ? failure.attempt : 0;
+  const waiting = failure?.id === id && failure.waiting;
+  useEffect(() => {
+    if (!waiting || !id) return;
+    const timer = setTimeout(() => setFailure({ id, attempt: attempt + 1, waiting: false }), Math.min(60, 10 * (attempt + 1)) * 1000);
+    return () => clearTimeout(timer);
+  }, [id, attempt, waiting]);
+  return <span className="bar-icon" title={player.weapon}>{id && !waiting
+    ? <img key={`${id}:${attempt}`} src={`/api/weapon-icon/${encodeURIComponent(id)}${attempt ? `?retry=${attempt}` : ''}`} alt="" onError={() => setFailure({ id, attempt, waiting: true })} />
+    : <span>?</span>}</span>;
 }
 
 /** The session's name on AlbionLab, with a name suggested from what was recorded that can be applied with one click. */

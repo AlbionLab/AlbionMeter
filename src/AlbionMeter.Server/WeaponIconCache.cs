@@ -5,6 +5,7 @@ namespace AlbionMeter.Server;
 public sealed class WeaponIconCache(IConfiguration configuration, MapCatalog catalog, AlbionMeter.Core.CombatSourceCatalog? sources = null)
 {
     private static readonly HttpClient Client = new() { Timeout = TimeSpan.FromSeconds(8) };
+    private static readonly string[] Sizes = ["?size=128", "", "?size=64"];
     private readonly ConcurrentDictionary<string, Lazy<Task<byte[]?>>> _pending = new();
     private readonly string _directory = Path.Combine(configuration["Storage:Directory"] ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AlbionMeter"), "assets", "weapon-icons");
     public async Task<byte[]?> Get(string id)
@@ -21,7 +22,23 @@ public sealed class WeaponIconCache(IConfiguration configuration, MapCatalog cat
         try
         {
             if (File.Exists(path)) return await File.ReadAllBytesAsync(path);
-            using var response = await Client.GetAsync($"https://render.albiononline.com/v1/item/{Uri.EscapeDataString(id)}.png?size=128", HttpCompletionOption.ResponseHeadersRead);
+            // The render service answers 502 for some items at one size and serves them at another, so each is tried in turn.
+            foreach (var size in Sizes)
+                if (await Download(id, size) is { } bytes)
+                {
+                    Directory.CreateDirectory(_directory);
+                    await File.WriteAllBytesAsync(path, bytes);
+                    return bytes;
+                }
+            return null;
+        }
+        catch (Exception exception) when (exception is HttpRequestException or IOException or UnauthorizedAccessException or OperationCanceledException) { return null; }
+    }
+    private static async Task<byte[]?> Download(string id, string size)
+    {
+        try
+        {
+            using var response = await Client.GetAsync($"https://render.albiononline.com/v1/item/{Uri.EscapeDataString(id)}.png{size}", HttpCompletionOption.ResponseHeadersRead);
             if (!response.IsSuccessStatusCode || response.Content.Headers.ContentLength > 256_000) return null;
             await using var stream = await response.Content.ReadAsStreamAsync();
             using var output = new MemoryStream();
@@ -35,10 +52,8 @@ public sealed class WeaponIconCache(IConfiguration configuration, MapCatalog cat
             }
             var bytes = output.ToArray();
             if (bytes.Length < 8 || !bytes.AsSpan(0, 8).SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 })) return null;
-            Directory.CreateDirectory(_directory);
-            await File.WriteAllBytesAsync(path, bytes);
             return bytes;
         }
-        catch (Exception exception) when (exception is HttpRequestException or IOException or UnauthorizedAccessException or OperationCanceledException) { return null; }
+        catch (Exception exception) when (exception is HttpRequestException or IOException or OperationCanceledException) { return null; }
     }
 }

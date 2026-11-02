@@ -66,12 +66,27 @@ body.failed .mark::before { animation: none; opacity: .35; }
 </main>
 <script>
 const desktop = window.albionDesktop;
+const words = {
+  en: { starting: 'Starting…', ready: 'Ready', logs: 'Logs', close: 'Close', retry: 'Try again', minimize: 'Minimize' },
+  pt: { starting: 'Iniciando…', ready: 'Pronto', logs: 'Logs', close: 'Fechar', retry: 'Tentar de novo', minimize: 'Minimizar' },
+};
+let text = words.en;
+function translate(language) {
+  text = words[language] ?? words.en;
+  document.documentElement.lang = language === 'pt' ? 'pt-BR' : 'en';
+  document.querySelector('[data-startup="logs"]').textContent = text.logs;
+  document.querySelector('[data-startup="quit"]').textContent = text.close;
+  document.querySelector('[data-startup="retry"]').textContent = text.retry;
+  document.querySelector('[data-window="minimize"]').setAttribute('aria-label', text.minimize);
+  document.querySelector('[data-window="close"]').setAttribute('aria-label', text.close);
+}
 function render(startup) {
+  if (startup.language) translate(startup.language);
   const steps = startup.steps ?? [];
   const current = steps.find(step => step.state === 'active') ?? steps.find(step => step.state === 'error');
   const finished = steps.filter(step => step.state === 'done' || step.state === 'warning').length;
   const notice = steps.find(step => step.state === 'warning' || (step.state === 'active' && step.detail));
-  document.getElementById('status').textContent = startup.ready ? 'Ready' : current ? `${current.label}…` : 'Starting…';
+  document.getElementById('status').textContent = startup.ready ? text.ready : current ? `${current.label}…` : text.starting;
   const detail = document.getElementById('detail');
   detail.textContent = notice?.detail ?? '';
   detail.className = `detail${notice?.state === 'warning' ? ' warning' : ''}`;

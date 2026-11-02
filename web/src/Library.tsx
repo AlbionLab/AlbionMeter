@@ -6,6 +6,7 @@ import { LoadoutProgression, LoadoutTable } from './DungeonLoadout';
 import { Icon } from './Icon';
 import { Section, ShareBar, StatCard, StatusPill } from './ui';
 import { inRecord, type RecordWindow } from './records';
+import { locale, message as serverMessage, t } from './i18n';
 import { compact, duration, precise, type Metric, type DungeonRun, type DungeonSummary, type GameCatalog, type Snapshot } from './types';
 
 export function DungeonJournal({ base, runId, floor, navigate, scope }: { base: string; runId?: string; floor: number; navigate: (path: string) => void; scope?: RecordWindow }) {
@@ -117,15 +118,15 @@ export function GameLibrary({ tab, onTab: setTab }: { tab: 'weapons' | 'maps'; o
   const [storage, setStorage] = useState('');
   useEffect(() => {
     let disposed = false;
-    fetch('/api/catalog').then(async response => { if (!response.ok) throw new Error('No map catalog is available.'); const data = await response.json(); if (!disposed) setCatalog(data); }).catch(error => { if (!disposed) setMessage(String(error)); });
-    fetch('/api/storage').then(response => response.json()).then(data => { if (!disposed) setStorage(data.databasePath); }).catch(() => { if (!disposed) setStorage('Storage information unavailable.'); });
+    fetch('/api/catalog').then(async response => { if (!response.ok) throw new Error(t('No map catalog is available.')); const data = await response.json(); if (!disposed) setCatalog(data); }).catch(error => { if (!disposed) setMessage(String(error)); });
+    fetch('/api/storage').then(response => response.json()).then(data => { if (!disposed) setStorage(data.databasePath); }).catch(() => { if (!disposed) setStorage(t('Storage information unavailable.')); });
     return () => { disposed = true; };
   }, []);
   async function importFolder(files: File[]) {
-    setBusy(true); setMessage('Reading selected game files…');
+    setBusy(true); setMessage(t('Reading selected game files…'));
     try {
       const worlds = files.filter(file => file.webkitRelativePath.replaceAll('\\', '/').endsWith('/GameData/cluster/world.bin'));
-      if (worlds.length !== 1) throw new Error('Select one installed game folder containing GameData/cluster/world.bin.');
+      if (worlds.length !== 1) throw new Error(t('Select one installed game folder containing GameData/cluster/world.bin.'));
       const world = worlds[0];
       const prefix = world.webkitRelativePath.slice(0, -'cluster/world.bin'.length);
       const form = new FormData(); form.append('world', world);
@@ -138,36 +139,36 @@ export function GameLibrary({ tab, onTab: setTab }: { tab: 'weapons' | 'maps'; o
       if (version && version.size < 1000) form.append('version', (await version.text()).trim());
       const response = await fetch('/api/catalog/import', { method: 'POST', headers: { 'X-Albion-Meter': 'local' }, body: form });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? 'Import failed.');
-      setCatalog(result); setMessage(`Imported ${result.mapCount} maps and ${result.weaponCount} weapon definitions.`);
-    } catch (error) { setMessage(error instanceof Error ? error.message : 'Import failed.'); }
+      if (!response.ok) throw new Error(serverMessage(result.error ?? 'Import failed.'));
+      setCatalog(result); setMessage(t('Imported {maps} maps and {weapons} weapon definitions.', { maps: result.mapCount, weapons: result.weaponCount }));
+    } catch (error) { setMessage(error instanceof Error ? error.message : t('Import failed.')); }
     finally { setBusy(false); }
   }
   const query = search.toLowerCase();
   const entries = tab === 'weapons' ? catalog?.weapons ?? [] : catalog?.maps ?? [];
   const matches = entries.filter(item => `${item.id} ${item.name} ${'family' in item ? item.family : item.type}`.toLowerCase().includes(query));
   return <div className="library-layout">
-    <Section className="catalog-panel" title="Game catalog" note={`Game version ${catalog?.gameVersion ?? 'unknown'}`} actions={<>
-      <div className="segmented" aria-label="Catalog"><button className={tab === 'weapons' ? 'active' : ''} aria-pressed={tab === 'weapons'} onClick={() => setTab('weapons')}>Weapons <span>{catalog?.weaponCount ?? 0}</span></button><button className={tab === 'maps' ? 'active' : ''} aria-pressed={tab === 'maps'} onClick={() => setTab('maps')}>Maps <span>{catalog?.mapCount ?? 0}</span></button></div>
-      <input className="search wide" placeholder="Search name, family or ID…" aria-label="Search game catalog" value={search} onChange={event => setSearch(event.target.value)} />
+    <Section className="catalog-panel" title={t('Game catalog')} note={t('Game version {version}', { version: catalog?.gameVersion ?? t('unknown') })} actions={<>
+      <div className="segmented" aria-label={t('Catalog')}><button className={tab === 'weapons' ? 'active' : ''} aria-pressed={tab === 'weapons'} onClick={() => setTab('weapons')}>{t('Weapons')} <span>{catalog?.weaponCount ?? 0}</span></button><button className={tab === 'maps' ? 'active' : ''} aria-pressed={tab === 'maps'} onClick={() => setTab('maps')}>{t('Maps')} <span>{catalog?.mapCount ?? 0}</span></button></div>
+      <input className="search wide" placeholder={t('Search name, family or ID…')} aria-label={t('Search game catalog')} value={search} onChange={event => setSearch(event.target.value)} />
     </>}>
-      <div className="table-scroll catalog-table"><table><thead><tr><th>NAME</th><th>{tab === 'weapons' ? 'WEAPON FAMILY' : 'MAP TYPE'}</th><th>TIER</th><th>ID</th></tr></thead><tbody>{matches.slice(0, 100).map(item => <tr key={item.id}><td className="strong">{item.name}</td><td>{'family' in item ? item.family : item.type}</td><td>{item.tier ? <span className="subtle-tag">T{item.tier}</span> : <span className="muted">—</span>}</td><td className="mono muted">{item.id}</td></tr>)}</tbody></table>{matches.length === 0 && <div className="empty-list">No {tab} match your search.</div>}</div>
-      <div className="table-foot">{precise(matches.length)} results{matches.length > 100 ? ' · Showing the first 100, refine your search for more' : ''}</div>
+      <div className="table-scroll catalog-table"><table><thead><tr><th>{t('NAME')}</th><th>{t(tab === 'weapons' ? 'WEAPON FAMILY' : 'MAP TYPE')}</th><th>{t('TIER')}</th><th>ID</th></tr></thead><tbody>{matches.slice(0, 100).map(item => <tr key={item.id}><td className="strong">{item.name}</td><td>{'family' in item ? item.family : item.type}</td><td>{item.tier ? <span className="subtle-tag">T{item.tier}</span> : <span className="muted">—</span>}</td><td className="mono muted">{item.id}</td></tr>)}</tbody></table>{matches.length === 0 && <div className="empty-list">{t(`No ${tab} match your search.`)}</div>}</div>
+      <div className="table-foot">{t('{n} results', { n: precise(matches.length) })}{matches.length > 100 ? t(' · Showing the first 100, refine your search for more') : ''}</div>
     </Section>
     <div className="side-stack">
-      <Section title="Import game data">
+      <Section title={t('Import game data')}>
         <div className="side-body">
-          <p>Select the installed game folder. Only world.bin, items.bin, localization.bin and the version identifier are read. Processing stays on your local server.</p>
-          <label className={`button primary ${busy ? 'disabled' : ''}`}>{busy ? 'Importing…' : 'Import game folder'}<input type="file" multiple disabled={busy} className="folder-input" ref={element => element?.setAttribute('webkitdirectory', '')} onChange={event => { void importFolder(Array.from(event.target.files ?? [])); event.target.value = ''; }} /></label>
+          <p>{t('Select the installed game folder. Only world.bin, items.bin, localization.bin and the version identifier are read. Processing stays on your local server.')}</p>
+          <label className={`button primary ${busy ? 'disabled' : ''}`}>{t(busy ? 'Importing…' : 'Import game folder')}<input type="file" multiple disabled={busy} className="folder-input" ref={element => element?.setAttribute('webkitdirectory', '')} onChange={event => { void importFolder(Array.from(event.target.files ?? [])); event.target.value = ''; }} /></label>
           {message && <p className="side-message" role="status">{message}</p>}
         </div>
       </Section>
-      <Section title="Catalog">
-        <dl className="side-list"><div><dt>Maps</dt><dd>{precise(catalog?.mapCount ?? 0)}</dd></div><div><dt>Weapon definitions</dt><dd>{precise(catalog?.weaponCount ?? 0)}</dd></div><div><dt>Game version</dt><dd>{catalog?.gameVersion ?? 'Unknown'}</dd></div><div><dt>Imported</dt><dd>{catalog?.importedAt ? new Date(catalog.importedAt).toLocaleDateString() : '—'}</dd></div></dl>
-        <p className="side-note">Random dungeon instances may only have a generic name in the game dictionary.</p>
+      <Section title={t('Catalog')}>
+        <dl className="side-list"><div><dt>{t('Maps')}</dt><dd>{precise(catalog?.mapCount ?? 0)}</dd></div><div><dt>{t('Weapon definitions')}</dt><dd>{precise(catalog?.weaponCount ?? 0)}</dd></div><div><dt>{t('Game version')}</dt><dd>{catalog?.gameVersion ?? t('Unknown')}</dd></div><div><dt>{t('Imported')}</dt><dd>{catalog?.importedAt ? new Date(catalog.importedAt).toLocaleDateString(locale()) : '—'}</dd></div></dl>
+        <p className="side-note">{t('Random dungeon instances may only have a generic name in the game dictionary.')}</p>
       </Section>
-      <Section title="Local records">
-        <dl className="side-list"><div><dt>Encounters kept</dt><dd>100</dd></div><div><dt>Dungeon runs kept</dt><dd>100</dd></div></dl>
+      <Section title={t('Local records')}>
+        <dl className="side-list"><div><dt>{t('Encounters kept')}</dt><dd>100</dd></div><div><dt>{t('Dungeon runs kept')}</dt><dd>100</dd></div></dl>
         <p className="side-note storage-path">{storage}</p>
       </Section>
     </div>

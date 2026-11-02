@@ -23,6 +23,45 @@ let update = { state: 'idle' };
 
 const logFolder = () => path.join(app.getPath('userData'), 'logs');
 
+// Preferences live in the app's data folder (%APPDATA%\Albion Meter on Windows, ~/.config/Albion Meter on Linux).
+const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
+
+function readSettings() {
+  try { return JSON.parse(fs.readFileSync(settingsFile(), 'utf8')) ?? {}; } catch { return {}; }
+}
+
+function writeSettings(changes) {
+  try { fs.writeFileSync(settingsFile(), JSON.stringify({ ...readSettings(), ...changes }, null, 2)); } catch (error) { log(`settings not saved: ${error.message}`); }
+}
+
+/** The chosen language, or the system's on the first run: Portuguese for any pt locale, English otherwise. */
+function language() {
+  const saved = readSettings().language;
+  if (saved === 'en' || saved === 'pt') return saved;
+  const system = app.getPreferredSystemLanguages?.()[0] ?? app.getLocale();
+  return /^pt/i.test(system ?? '') ? 'pt' : 'en';
+}
+
+const portuguese = {
+  'Starting the capture service': 'Iniciando o serviço de captura',
+  'Allowing packet capture': 'Permitindo a captura de pacotes',
+  'Loading the meter': 'Carregando o meter',
+  'Type your password in the system prompt to let the meter read the game traffic.': 'Digite sua senha na janela do sistema para o meter poder ler o tráfego do jogo.',
+  'Not allowed: the meter opens but cannot read the game traffic. Allow it later with {command}': 'Sem permissão: o meter abre, mas não consegue ler o tráfego do jogo. Permita depois com {command}',
+  'Another capture service is using port 5187 and did not stop.': 'Outro serviço de captura está usando a porta 5187 e não parou.',
+  'The capture service stopped while starting.': 'O serviço de captura parou enquanto iniciava.',
+  'The capture service did not answer in 30 seconds.': 'O serviço de captura não respondeu em 30 segundos.',
+  'The capture service stopped unexpectedly (code {code}).': 'O serviço de captura parou inesperadamente (código {code}).',
+  'The update could not be downloaded. It will be tried again later.': 'Não foi possível baixar a atualização. Ela será tentada de novo mais tarde.',
+  'The update could not be installed. The meter keeps running on this version.': 'Não foi possível instalar a atualização. O meter continua nesta versão.',
+};
+
+function tr(text, values = {}) {
+  let result = language() === 'pt' ? portuguese[text] ?? text : text;
+  for (const [name, value] of Object.entries(values)) result = result.replaceAll(`{${name}}`, String(value));
+  return result;
+}
+
 function log(message) {
   try {
     fs.mkdirSync(logFolder(), { recursive: true });
@@ -37,10 +76,11 @@ function send(channel, value) {
 function resetStartup() {
   startup = {
     error: null,
+    language: language(),
     steps: [
-      { id: 'server', label: 'Starting the capture service', state: 'pending' },
-      ...(needsPermission ? [{ id: 'permission', label: 'Allowing packet capture', state: 'pending' }] : []),
-      { id: 'meter', label: 'Loading the meter', state: 'pending' },
+      { id: 'server', label: tr('Starting the capture service'), state: 'pending' },
+      ...(needsPermission ? [{ id: 'permission', label: tr('Allowing packet capture'), state: 'pending' }] : []),
+      { id: 'meter', label: tr('Loading the meter'), state: 'pending' },
     ],
   };
   send('desktop:startup', startup);
@@ -181,11 +221,11 @@ async function linuxServer() {
   if (capabilities.includes('cap_net_raw')) {
     step('permission', 'done');
   } else {
-    step('permission', 'active', 'Type your password in the system prompt to let the meter read the game traffic.');
+    step('permission', 'active', tr('Type your password in the system prompt to let the meter read the game traffic.'));
     const granted = await run('pkexec', ['setcap', 'cap_net_raw=ep', executable]);
     if (granted === null) {
       log('packet capture permission was not granted');
-      step('permission', 'warning', `Not allowed: the meter opens but cannot read the game traffic. Allow it later with sudo setcap cap_net_raw=ep "${executable}"`);
+      step('permission', 'warning', tr('Not allowed: the meter opens but cannot read the game traffic. Allow it later with {command}', { command: `sudo setcap cap_net_raw=ep "${executable}"` }));
     } else {
       step('permission', 'done');
     }
@@ -201,7 +241,7 @@ async function startServer() {
     log(`stopping a capture service this app did not start (version ${await serverVersion()})`);
     await request('POST', '/api/shutdown');
     for (let attempt = 0; attempt < 40 && await healthy(); attempt++) await wait(250);
-    if (await healthy()) throw new Error('Another capture service is using port 5187 and did not stop.');
+    if (await healthy()) throw new Error(tr('Another capture service is using port 5187 and did not stop.'));
   }
   const { folder, executable: file } = needsPermission ? await linuxServer() : bundledServer();
   executable = file;
@@ -216,10 +256,10 @@ async function startServer() {
   });
   for (let attempt = 0; attempt < 120; attempt++) {
     if (await healthy()) return;
-    if (server !== child) throw new Error('The capture service stopped while starting.');
+    if (server !== child) throw new Error(tr('The capture service stopped while starting.'));
     await wait(250);
   }
-  throw new Error('The capture service did not answer in 30 seconds.');
+  throw new Error(tr('The capture service did not answer in 30 seconds.'));
 }
 
 function stopServer() {
@@ -280,7 +320,7 @@ async function crashed(code) {
   if (!splashWindow) await createSplash();
   if (window && !window.isDestroyed()) window.destroy();
   resetStartup();
-  fail(`The capture service stopped unexpectedly (code ${code}).`);
+  fail(tr('The capture service stopped unexpectedly (code {code}).', { code }));
 }
 
 function external(url) {
@@ -349,14 +389,22 @@ function watchUpdates() {
   autoUpdater.on('error', error => {
     log(`update failed: ${error?.message ?? error}`);
     if (update.state === 'installing') return installFailed();
-    if (update.state !== 'ready') setUpdate({ state: 'error', message: 'The update could not be downloaded. It will be tried again later.' });
+    if (update.state !== 'ready') setUpdate({ state: 'error', message: tr('The update could not be downloaded. It will be tried again later.') });
   });
   const check = () => autoUpdater.checkForUpdates().catch(error => log(`update check failed: ${error?.message ?? error}`));
   check();
   setInterval(check, checkEvery);
 }
 
-ipcMain.handle('desktop:info', event => ({ version: app.getVersion(), platform: process.platform, maximized: BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false, startup, update, logs: logFolder() }));
+ipcMain.handle('desktop:info', event => ({ version: app.getVersion(), platform: process.platform, maximized: BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false, startup, update, logs: logFolder(), language: language() }));
+
+ipcMain.handle('desktop:language', () => language());
+
+ipcMain.handle('desktop:set-language', (_event, value) => {
+  if (value !== 'en' && value !== 'pt') return;
+  writeSettings({ language: value });
+  startup = { ...startup, language: value };
+});
 
 ipcMain.on('desktop:window', (event, action) => {
   const target = BrowserWindow.fromWebContents(event.sender);
@@ -404,7 +452,7 @@ ipcMain.on('desktop:update', async (_event, action) => {
 async function installFailed() {
   log('the update was not installed; starting the service again');
   leaving = false;
-  setUpdate({ state: 'error', message: 'The update could not be installed. The meter keeps running on this version.' });
+  setUpdate({ state: 'error', message: tr('The update could not be installed. The meter keeps running on this version.') });
   try { await startServer(); }
   catch (error) { log(`restart after a failed install: ${error.message}`); crashed(null); }
 }

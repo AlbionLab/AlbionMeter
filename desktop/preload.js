@@ -15,4 +15,6 @@ contextBridge.exposeInMainWorld('albionDesktop', {
   onStartup: callback => listen('desktop:startup', callback),
   startup: action => ipcRenderer.send('desktop:startup', action),
   permission: () => ipcRenderer.invoke('desktop:permission'),
+  language: () => ipcRenderer.invoke('desktop:language'),
+  setLanguage: language => ipcRenderer.invoke('desktop:set-language', language),
 });

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { HubConnectionBuilder, LogLevel } from '@microsoft/signalr';
 import type { Snapshot } from './types';
 import { mergeSnapshot } from './state';
+import { message, t } from './i18n';
 
 export function useMeter() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
@@ -38,10 +39,10 @@ export function useMeter() {
     setError(null);
     try {
       const response = await fetch(`/api/session/${action}`, { method: 'POST', headers: { 'X-Albion-Meter': 'local' } });
-      if (!response.ok) throw new Error((await response.json().catch(() => ({})) as { error?: string }).error ?? 'The session could not be updated.');
+      if (!response.ok) throw new Error(message((await response.json().catch(() => ({})) as { error?: string }).error ?? 'The session could not be updated.'));
       const next = await response.json() as Snapshot;
       setSnapshot(previous => mergeSnapshot(previous, next));
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'The server is unavailable.'); }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : t('The server is unavailable.')); }
     finally { commandPending.current = false; setBusy(false); }
   }
   return { snapshot, connection, error, busy, command, dismissError: () => setError(null) };

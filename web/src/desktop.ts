@@ -4,7 +4,7 @@ export type UpdateState =
   | { state: 'ready' | 'installing'; version: string }
   | { state: 'error'; message: string };
 
-export interface DesktopInfo { version: string; platform: string; maximized: boolean; update: UpdateState }
+export interface DesktopInfo { version: string; platform: string; maximized: boolean; update: UpdateState; language: 'en' | 'pt' }
 
 export interface Desktop {
   info: () => Promise<DesktopInfo>;
@@ -13,6 +13,8 @@ export interface Desktop {
   onUpdate: (callback: (state: UpdateState) => void) => () => void;
   update: (action: 'install' | 'check') => void;
   permission: () => Promise<boolean>;
+  language: () => Promise<'en' | 'pt'>;
+  setLanguage: (language: 'en' | 'pt') => Promise<void>;
 }
 
 export const desktop = (window as unknown as { albionDesktop?: Desktop }).albionDesktop;

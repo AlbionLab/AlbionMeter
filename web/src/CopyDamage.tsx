@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Icon, type IconName } from './Icon';
 import type { Metric, Snapshot } from './types';
 import { weaponCatalog } from './weapons';
+import { locale, t } from './i18n';
 
-const number = () => new Intl.NumberFormat('en', { maximumFractionDigits: 0 });
+const number = () => new Intl.NumberFormat(locale(), { maximumFractionDigits: 0 });
 
 function contributions(snapshot: Snapshot, metric: Metric) {
   return [...new Map([...(snapshot.formerMembers ?? []), ...snapshot.members].map(player => [player.id, player])).values()]
@@ -44,7 +45,8 @@ function loadImage(source: string): Promise<HTMLImageElement | null> {
   });
 }
 
-const compactNumber = (value: number) => value >= 1e6 ? `${(value / 1e6).toFixed(2)}M` : value >= 1e3 ? `${(value / 1e3).toFixed(1)}K` : number().format(Math.round(value));
+const fixed = (value: number, digits: number) => value.toLocaleString(locale(), { minimumFractionDigits: digits, maximumFractionDigits: digits, useGrouping: false });
+const compactNumber = (value: number) => value >= 1e6 ? `${fixed(value / 1e6, 2)}M` : value >= 1e3 ? `${fixed(value / 1e3, 1)}K` : number().format(Math.round(value));
 const clock = (seconds: number) => {
   const whole = Math.max(0, Math.floor(seconds));
   const hours = Math.floor(whole / 3600), minutes = Math.floor(whole / 60) % 60, rest = whole % 60;
@@ -69,7 +71,7 @@ async function damageImage(snapshot: Snapshot, metric: Metric): Promise<Blob> {
   canvas.width = width * 2;
   canvas.height = height * 2;
   const context = canvas.getContext('2d');
-  if (!context) throw new Error('Image rendering is unavailable.');
+  if (!context) throw new Error(t('Image rendering is unavailable.'));
   context.scale(2, 2);
   const sans = '"Noto Sans", "Segoe UI", system-ui, sans-serif', mono = '"JetBrains Mono", ui-monospace, Consolas, monospace';
   const font = (weight: number, size: number, family = sans) => { context.font = `${weight} ${size}px ${family}`; };
@@ -95,19 +97,19 @@ async function damageImage(snapshot: Snapshot, metric: Metric): Promise<Blob> {
   const textX = pad + 46;
   font(700, 16);
   context.fillStyle = '#e9ecf2';
-  context.fillText(metric === 'damage' ? 'Party damage' : 'Party healing', textX, 34);
+  context.fillText(t(metric === 'damage' ? 'Party damage' : 'Party healing'), textX, 34);
   const started = new Date(snapshot.startedAt);
-  const when = Number.isNaN(started.getTime()) ? '' : started.toLocaleString('en', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const when = Number.isNaN(started.getTime()) ? '' : started.toLocaleString(locale(), { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   font(400, 11.5);
   context.fillStyle = '#808a9b';
-  context.fillText([when, clock(snapshot.elapsedSeconds), `${players.length} ${players.length === 1 ? 'player' : 'players'}`].filter(Boolean).join('  ·  '), textX, 52);
+  context.fillText([when, clock(snapshot.elapsedSeconds), `${players.length} ${t(players.length === 1 ? 'player' : 'players')}`].filter(Boolean).join('  ·  '), textX, 52);
 
   const totalDamage = players.reduce((sum, player) => sum + player.damage, 0);
   const totalHealing = players.reduce((sum, player) => sum + player.healing, 0);
   const elapsed = Math.max(1, snapshot.elapsedSeconds);
   const stats: [string, string][] = metric === 'damage'
-    ? [['DAMAGE', compactNumber(totalDamage)], ['HEALING', compactNumber(totalHealing)], ['PARTY DPS', number().format(Math.round(totalDamage / elapsed))]]
-    : [['HEALING', compactNumber(totalHealing)], ['DAMAGE', compactNumber(totalDamage)], ['PARTY HPS', number().format(Math.round(totalHealing / elapsed))]];
+    ? [[t('DAMAGE'), compactNumber(totalDamage)], [t('HEALING'), compactNumber(totalHealing)], [t('PARTY DPS'), number().format(Math.round(totalDamage / elapsed))]]
+    : [[t('HEALING'), compactNumber(totalHealing)], [t('DAMAGE'), compactNumber(totalDamage)], [t('PARTY HPS'), number().format(Math.round(totalHealing / elapsed))]];
   let statRight = width - pad;
   for (const [label, value] of [...stats].reverse()) {
     font(700, 9);
@@ -171,7 +173,7 @@ async function damageImage(snapshot: Snapshot, metric: Metric): Promise<Blob> {
     context.fillText(rate, right, middle + 4);
     font(600, 12.5, mono);
     context.fillStyle = '#e9ecf2';
-    const amount = `${compactNumber(player[metric])}  ${(total > 0 ? player[metric] / total * 100 : 0).toFixed(1)}%`;
+    const amount = `${compactNumber(player[metric])}  ${fixed(total > 0 ? player[metric] / total * 100 : 0, 1)}%`;
     const amountRight = right - 72;
     context.fillText(amount, amountRight, middle + 4);
     const amountLeft = amountRight - context.measureText(amount).width - 16;
@@ -185,7 +187,7 @@ async function damageImage(snapshot: Snapshot, metric: Metric): Promise<Blob> {
     context.restore();
     const nameEnd = nameX + context.measureText(name).width + 10;
     const tier = weapon?.tier ? `T${weapon.tier}.${weapon.enchantment}` : '';
-    const weaponLabel = weapon ? `${weapon.name}${tier ? ` · ${tier}` : ''}` : player.weapon === 'Unarmed' ? 'Unarmed' : '';
+    const weaponLabel = weapon ? `${weapon.name}${tier ? ` · ${tier}` : ''}` : player.weapon === 'Unarmed' ? t('Unarmed') : '';
     if (weaponLabel && amountLeft - nameEnd > 50) {
       font(400, 11);
       context.fillStyle = '#9aa3b2';
@@ -197,11 +199,11 @@ async function damageImage(snapshot: Snapshot, metric: Metric): Promise<Blob> {
   const footer = height - 11;
   font(400, 11);
   context.fillStyle = '#808a9b';
-  context.fillText(`${'Total'}  ${number().format(Math.round(total))}`, pad + 2, footer);
+  context.fillText(`${t('Total')}  ${number().format(Math.round(total))}`, pad + 2, footer);
   context.textAlign = 'right';
   context.fillStyle = '#f98714';
   context.fillText('albionlab.app', width - pad, footer);
-  return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Image rendering failed.')), 'image/png'));
+  return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error(t('Image rendering failed.'))), 'image/png'));
 }
 
 type Format = 'text' | 'image' | 'names';
@@ -249,39 +251,39 @@ export function CopyDamage({ snapshot, metric }: { snapshot: Snapshot; metric: M
     setBusy(format);
     try {
       if (format === 'image') {
-        if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') throw new Error('Image clipboard is unavailable in this browser. Use Copy text.');
+        if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') throw new Error(t('Image clipboard is unavailable in this browser. Use Copy text.'));
         await navigator.clipboard.write([new ClipboardItem({ 'image/png': damageImage(snapshot, metric) })]);
       } else {
-        if (!navigator.clipboard?.writeText) throw new Error('Text clipboard is unavailable in this browser.');
+        if (!navigator.clipboard?.writeText) throw new Error(t('Text clipboard is unavailable in this browser.'));
         await navigator.clipboard.writeText(format === 'names' ? playerNames(snapshot, metric) : damageText(snapshot, metric));
       }
       flash(format);
     } catch (error) {
       flash(null, error instanceof DOMException && error.name === 'NotAllowedError'
-        ? 'Clipboard access was denied. Allow clipboard access and try again.'
-        : error instanceof Error ? error.message : 'Could not copy. Try again.');
+        ? t('Clipboard access was denied. Allow clipboard access and try again.')
+        : error instanceof Error ? error.message : t('Could not copy. Try again.'));
     } finally { setBusy(null); }
   }
   const done = formats.find(item => item.format === copied);
   return <div ref={root} className="copy-damage">
     <button ref={trigger} className={`button secondary copy-trigger${copied ? ' copied' : ''}`} aria-haspopup="menu" aria-expanded={open} aria-disabled={!available}
-      title={`Copy total ${metric}`} onClick={() => { if (available && !busy) setOpen(value => !value); }}>
-      <span className={`copy-trigger-icon${busy ? ' busy' : ''}`}><Icon name={copied ? 'check' : 'copy'} size={15} /></span>{'Copy'}<Icon name="chevron" size={13} />
+      title={t(`Copy total ${metric}`)} onClick={() => { if (available && !busy) setOpen(value => !value); }}>
+      <span className={`copy-trigger-icon${busy ? ' busy' : ''}`}><Icon name={copied ? 'check' : 'copy'} size={15} /></span>{t('Copy')}<Icon name="chevron" size={13} />
     </button>
-    {open && <div className="copy-menu" role="menu" aria-label={`Copy total ${metric}`} onKeyDown={event => {
+    {open && <div className="copy-menu" role="menu" aria-label={t(`Copy total ${metric}`)} onKeyDown={event => {
       if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
       event.preventDefault();
       const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
       const index = items.indexOf(document.activeElement as HTMLButtonElement);
       items[(index + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
     }}>
-      <span className="copy-menu-title">{`Copy total ${metric}`}</span>
+      <span className="copy-menu-title">{t(`Copy total ${metric}`)}</span>
       {formats.map(item => <button key={item.format} role="menuitem" onClick={() => void copy(item.format)}>
-        <Icon name={item.icon} size={16} /><span><strong>{item.label}</strong><small>{item.hint}</small></span>
+        <Icon name={item.icon} size={16} /><span><strong>{t(item.label)}</strong><small>{t(item.hint)}</small></span>
       </button>)}
     </div>}
     <span className={`copy-toast${done || error || busy === 'image' ? ' shown' : ''}${error ? ' error' : ''}`} role={error ? 'alert' : 'status'}>
-      {error || (done ? done.done : busy === 'image' ? 'Preparing image…' : '')}
+      {error || (done ? t(done.done) : busy === 'image' ? t('Preparing image…') : '')}
     </span>
   </div>;
 }

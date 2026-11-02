@@ -1,3 +1,5 @@
+import { locale } from './i18n';
+
 export type Metric = 'damage' | 'healing';
 export interface Player {
   membership?: 'active' | 'left' | 'unconfirmed';
@@ -47,8 +49,8 @@ export interface Encounter {
   members: number;
   mode: string;
 }
-export const compact = (value: number) => new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
-export const precise = (value: number) => new Intl.NumberFormat('en', { maximumFractionDigits: 0 }).format(value);
+export const compact = (value: number) => new Intl.NumberFormat(locale(), { notation: 'compact', maximumFractionDigits: 1 }).format(value);
+export const precise = (value: number) => new Intl.NumberFormat(locale(), { maximumFractionDigits: 0 }).format(value);
 export function duration(seconds: number) {
   const value = Math.max(0, Math.floor(seconds));
   const pad = (part: number) => part.toString().padStart(2, '0');

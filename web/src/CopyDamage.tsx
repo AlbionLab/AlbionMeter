@@ -23,12 +23,13 @@ function loadIcon(id: string): Promise<HTMLImageElement | null> {
 
 const decimal = (value: number, digits: number) => value.toLocaleString('pt-BR', { minimumFractionDigits: digits, maximumFractionDigits: digits, useGrouping: false });
 
-/** One ranked line per player: "1. Name: 1747647(14,4%)|1234,56 DPS", the format other Albion meters share in chat. */
+/** One ranked line per player: "1. Name: 1747647(14,40%)|1234,56 DPS", the format other Albion meters share in chat. */
 export function damageText(snapshot: Snapshot, metric: Metric = 'damage') {
   const players = contributions(snapshot, metric);
   const total = players.reduce((sum, player) => sum + player[metric], 0);
   const unit = metric === 'damage' ? 'DPS' : 'HPS';
-  return players.map((player, index) => `${index + 1}. ${player.name}: ${Math.round(player[metric])}(${decimal(total > 0 ? player[metric] / total * 100 : 0, 1)}%)|${decimal(metric === 'damage' ? player.encounterDps : player.encounterHps, 2)} ${unit}`).join('\n');
+  // Two decimals on the share, matching Albion Statistics Analysis' copy so both meters paste identically.
+  return players.map((player, index) => `${index + 1}. ${player.name}: ${Math.round(player[metric])}(${decimal(total > 0 ? player[metric] / total * 100 : 0, 2)}%)|${decimal(metric === 'damage' ? player.encounterDps : player.encounterHps, 2)} ${unit}`).join('\n');
 }
 
 /** The players' names in ranking order, one per line. */

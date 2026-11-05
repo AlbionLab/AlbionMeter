@@ -106,7 +106,19 @@ main { display: flex; flex-direction: column; gap: 14px; }
 .button.ghost.armed { color: var(--text); border-color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
 .button.danger { background: transparent; border-color: color-mix(in srgb, var(--bad) 55%, transparent); color: var(--bad); }
 .button.danger:hover:not(:disabled) { background: var(--bad); border-color: var(--bad); color: #2a0806; }
-.button.danger.armed { background: var(--bad); border-color: var(--bad); color: #2a0806; font-weight: 600; }
+.button.danger-solid { background: var(--bad); border-color: var(--bad); color: #2a0806; font-weight: 600; }
+.button.danger-solid:hover:not(:disabled) { background: #ef7563; border-color: #ef7563; color: #2a0806; }
+/* The confirm modal for Reset and End: a small centered dialog over a dimmed backdrop, so a destructive action is a deliberate choice. */
+.modal-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 20px; background: #0009; backdrop-filter: blur(2px); animation: modal-fade .12s ease-out; -webkit-app-region: no-drag; }
+.modal { width: min(380px, 100%); display: flex; flex-direction: column; gap: 10px; padding: 20px; border: 1px solid var(--border-strong); border-radius: 14px; background: var(--surface); box-shadow: 0 24px 60px #000b; text-align: left; animation: modal-pop .16s ease-out; }
+.modal-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; }
+.modal-icon.warn { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.modal-icon.bad { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
+.modal h3 { margin: 4px 0 0; font-size: 16px; }
+.modal p { margin: 0; color: var(--text-2); font-size: 13px; line-height: 1.5; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+@keyframes modal-fade { from { opacity: 0; } }
+@keyframes modal-pop { from { opacity: 0; transform: translateY(8px) scale(.98); } }
 select { height: 32px; padding: 0 30px 0 11px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23808a9b' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center; color: var(--text-2); font-size: 12.5px; appearance: none; cursor: pointer; }
 select:hover:not(:disabled) { border-color: #3a4558; color: var(--text); }
 .search { width: 180px; height: 32px; padding: 0 11px 0 32px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23545e6f' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E") no-repeat 11px center; color: var(--text); font-size: 12.5px; }
@@ -617,13 +629,19 @@ dd { margin: 0; color: var(--text-2); font-family: var(--mono); font-size: 12px;
 .mini-main { display: flex; flex-direction: column; gap: 14px; width: 100%; padding: 18px 20px 40px; }
 @media (max-width: 640px) { .mini-main { padding: 14px 12px 32px; } }
 .mini-controls { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 16px 18px; }
-.mini-time { display: flex; flex-direction: column; }
-.mini-time strong { font-family: var(--mono); font-size: 26px; }
-.mini-buttons { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.mini-time { display: flex; flex-direction: column; gap: 4px; }
+.mini-clock { display: flex; align-items: baseline; gap: 10px; }
+.mini-clock .muted { font-size: 12px; }
+.mini-time strong { font-family: var(--mono); font-size: 26px; line-height: 1; }
+.mini-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 9px; }
+.mini-buttons { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: flex-end; }
 .btn-group { display: flex; gap: 8px; }
 /* A thin rule sets the session controls apart from the counting controls, so Reset and End read as a different kind of action. */
 .btn-group.session { padding-left: 14px; border-left: 1px solid var(--border); }
-@media (max-width: 460px) { .btn-group.session { padding-left: 0; border-left: 0; } }
+/* The one-line hint under the session buttons says plainly what End does, so it is never mistaken for Pause. */
+.session-note { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--muted); font-size: 11.5px; }
+.session-note svg { flex: none; color: var(--warn); }
+@media (max-width: 560px) { .mini-actions { align-items: stretch; } .mini-buttons { justify-content: flex-start; } .btn-group.session { padding-left: 0; border-left: 0; } }
 .mini-bars .panel-heading { flex-wrap: wrap; gap: 10px; }
 .mini-empty { padding: 28px 18px; color: var(--muted); text-align: center; }
 .bars { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 10px 14px 16px; list-style: none; }
@@ -637,20 +655,43 @@ dd { margin: 0; color: var(--text-2); font-family: var(--mono); font-size: 12px;
 .bar-value { font-family: var(--mono); font-weight: 600; }
 .bar-value small { color: var(--text-2); font-weight: 400; }
 .bar-rate { color: var(--muted); font-family: var(--mono); font-size: 12px; text-align: right; }
-.albionlab-card { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px; border-color: #f9871455; }
-.albionlab-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.albionlab-head > div { display: flex; flex-direction: column; }
-.albionlab-head .muted { font-size: 12px; }
+.albionlab-card { position: relative; display: flex; flex-direction: column; gap: 14px; padding: 16px 18px; overflow: hidden; border-color: var(--border-strong); }
+/* When a session is live the card glows in the brand colour and a faint banner washes the right edge, echoing albionlab.app. */
+.albionlab-card.live { border-color: #f9871466; }
+.albionlab-card.live::after { content: ''; position: absolute; inset: 0 0 auto auto; width: 320px; height: 100%; pointer-events: none; background: radial-gradient(120% 140% at 100% 0, #f9871420, transparent 60%); }
+.albionlab-head { position: relative; z-index: 1; display: flex; align-items: center; gap: 12px 14px; flex-wrap: wrap; }
+.al-logo { flex: none; }
+.al-title { display: flex; flex-direction: column; min-width: 0; }
+.al-title .muted { font-size: 12px; }
+.al-live { display: inline-flex; align-items: center; gap: 7px; padding: 3px 11px 3px 9px; border: 1px solid #3ecf7a40; border-radius: 999px; background: #3ecf7a14; color: var(--good); font-weight: 700; font-size: 12px; }
+.al-live i { width: 8px; height: 8px; border-radius: 50%; background: var(--good); animation: mini-pulse 1.4s ease-in-out infinite; }
+.al-live.completed { border-color: var(--border-strong); background: var(--surface-2); color: var(--muted); }
+.al-live.completed i { background: var(--muted); animation: none; }
+.al-live.offline { border-color: #e7ad4240; background: #e7ad4214; color: var(--warn); }
+.al-live.offline i { background: var(--warn); animation: none; }
+.al-link { display: inline-flex; align-items: center; gap: 8px; min-width: 0; height: 34px; padding: 0 6px 0 12px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface-2); }
+.al-link > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 12.5px; color: var(--text-2); }
+.al-copy { display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 6px; background: var(--surface-3); color: var(--muted); cursor: pointer; transition: color .15s, background .15s; }
+.al-copy:hover { color: var(--text); background: var(--hover); }
+.al-open { height: 34px; }
 .albionlab-account { display: flex; align-items: center; gap: 8px; margin-left: auto; font-weight: 600; font-size: 13px; }
 .albionlab-account img { border-radius: 50%; }
-.albionlab-body { display: flex; flex-direction: column; gap: 10px; }
+.albionlab-body { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 12px; }
 .albionlab-body > p { color: var(--text-2); }
 .albionlab-error { color: #f3a294; font-size: 13px; }
-.albionlab-actions, .albionlab-session, .albionlab-options { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.albionlab-options label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); }
-.albionlab-field { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); }
+.al-nosession { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* The options sit in three columns divided by thin rules: the name, the visibility, and the two toggles. */
+.albionlab-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; padding-top: 2px; }
+.al-col { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.al-col + .al-col { padding-left: 18px; border-left: 1px solid var(--border); }
+.al-col-label { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.al-col .ui-select, .al-col .ui-select-button { width: 100%; }
+.al-checks { gap: 10px; }
+.check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); cursor: pointer; }
+.al-foot { display: flex; align-items: center; justify-content: flex-end; }
+.albionlab-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .albionlab-field .ui-select-button { color: var(--text); }
-.session-link { font-family: var(--mono); font-size: 13px; color: var(--text-2); text-decoration: underline; overflow-wrap: anywhere; }
+@media (max-width: 760px) { .albionlab-grid { grid-template-columns: 1fr; } .al-col + .al-col { padding-left: 0; border-left: 0; padding-top: 12px; border-top: 1px solid var(--border); } }
 .publish-state { display: inline-flex; align-items: center; gap: 7px; font-weight: 700; font-size: 13px; }
 .publish-state i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
 .publish-state.live i { background: #ec6450; animation: mini-pulse 1.4s ease-in-out infinite; }
@@ -684,7 +725,8 @@ dd { margin: 0; color: var(--text-2); font-family: var(--mono); font-size: 12px;
 .name-suggestion { align-self: flex-start; max-width: 100%; overflow: hidden; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .name-suggestion strong { color: var(--text-2); font-weight: 600; }
 .name-suggestion:hover strong { color: var(--accent); }
-.albionlab-name input { flex: 1; max-width: 420px; height: 32px; padding: 0 11px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; }
+.al-name-field { display: flex; width: 100%; }
+.albionlab-name input { flex: 1; width: 100%; height: 34px; padding: 0 11px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; }
 .albionlab-name input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(249, 135, 20, 0.16); }
 .desktop .mini-bar { flex-wrap: nowrap; height: 52px; padding: 0 0 0 20px; -webkit-app-region: drag; user-select: none; }
 .desktop .mini-bar .segmented, .desktop .mini-bar .capture-pill, .desktop .mini-bar button, .desktop .mini-bar a { -webkit-app-region: no-drag; }

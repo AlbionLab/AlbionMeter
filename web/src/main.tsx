@@ -58,8 +58,10 @@ function SessionName({ title, suggestion, save }: { title: string | null; sugges
   useEffect(() => setValue(title ?? ''), [title]);
   const commit = () => { if (value.trim() !== (title ?? '')) save(value.trim()); };
   return <div className="albionlab-name">
-    <label className="albionlab-field"><span>{t('Name')}</span><input value={value} maxLength={80} placeholder={suggestion ?? t('Untitled session')} aria-label={t('Session name')}
-      onChange={event => setValue(event.target.value)} onBlur={commit} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { setValue(title ?? ''); event.currentTarget.blur(); } }} /></label>
+    <div className="al-name-field">
+      <input value={value} maxLength={80} placeholder={suggestion ?? t('Untitled session')} aria-label={t('Session name')}
+        onChange={event => setValue(event.target.value)} onBlur={commit} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { setValue(title ?? ''); event.currentTarget.blur(); } }} />
+    </div>
     {suggestion && suggestion !== value.trim() && <button type="button" className="name-suggestion" onClick={() => { setValue(suggestion); save(suggestion); }} title={t('Use this name')}>{t('Suggestion:')} <strong>{suggestion}</strong></button>}
   </div>;
 }
@@ -84,12 +86,19 @@ function AlbionLabCard({ recording }: { recording: boolean }) {
     if (next.pairing) window.open(next.pairing.verifyUrl, '_blank', 'noopener');
     return next;
   });
+  const copyLink = (url: string) => { void navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); };
   if (!status) return <section className="panel albionlab-card"><p className="muted">{t('Connecting to AlbionLab…')}</p></section>;
   const session = status.session?.id ? status.session : null;
-  return <section className="panel albionlab-card">
+  return <section className={`panel albionlab-card${session ? ' live' : ''}`}>
     <div className="albionlab-head">
-      <img src="/brand.svg" alt="AlbionLab" width={34} height={27} />
-      <div><strong>AlbionLab</strong><span className="muted">{t('Full analysis, dungeons and sharing at albionlab.app')}</span></div>
+      <img className="al-logo" src="/brand.svg" alt="AlbionLab" width={40} height={32} />
+      <div className="al-title"><strong>AlbionLab</strong><span className="muted">{t('Share, analyse and follow this session on AlbionLab.')}</span></div>
+      {status.connected && session && <>
+        <span className={`al-live ${session.state}`}><i />{t(session.state === 'live' ? 'Live' : session.state === 'completed' ? 'Finished' : session.state === 'offline' ? 'Offline — resending' : 'Not published')}</span>
+        <div className="al-link" title={session.url}><span>{session.url.replace(/^https?:\/\//, '')}</span>
+          <button className="al-copy" title={t(copied ? 'Copied' : 'Copy link')} onClick={() => copyLink(session.url)}><Icon name={copied ? 'check' : 'copy'} size={14} /></button></div>
+        <a className="button primary al-open" href={session.url} target="_blank" rel="noreferrer"><Icon name="link" size={14} />{t('Open full analysis')}</a>
+      </>}
       {status.account && <span className="albionlab-account"><img src={status.account.avatarUrl} alt="" width={26} height={26} />{status.account.name}</span>}
     </div>
     {error && <p className="albionlab-error">{error}</p>}
@@ -106,28 +115,29 @@ function AlbionLabCard({ recording }: { recording: boolean }) {
       <div className="albionlab-actions"><a className="button secondary" href={status.pairing.verifyUrl} target="_blank" rel="noreferrer">{t('Open AlbionLab again')}</a><span className="muted">{t('Waiting for approval…')}</span></div>
     </div>}
     {status.connected && <div className="albionlab-body">
-      {session ? <>
-        <div className="albionlab-session">
-          <span className={`publish-state ${session.state}`}><i />{t(session.state === 'live' ? 'Publishing live' : session.state === 'completed' ? 'Session finished' : session.state === 'offline' ? 'Offline — will resend' : 'Not published')}</span>
-          <a className="session-link" href={session.url} target="_blank" rel="noreferrer">{session.url.replace(/^https?:\/\//, '')}</a>
-          <button className="button secondary" onClick={() => { void navigator.clipboard.writeText(session.url); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>{t(copied ? 'Copied' : 'Copy link')}</button>
-          <a className="button primary" href={session.url} target="_blank" rel="noreferrer">{t('Open full analysis')}</a>
-        </div>
-        {session.error && <p className="albionlab-error">{message(session.error)}</p>}
-        <SessionName key={session.id} title={session.title} suggestion={status.suggestedTitle} save={title => void run(() => post('/api/albionlab/session', { title }))} />
-      </> : <div className="albionlab-session">
+      {!session && <div className="al-nosession">
         <span className="publish-state"><i />{t(recording ? 'Creating the session…' : 'No live session')}</span>
-        <span className="muted">{t(recording ? 'The live session on AlbionLab is being created.' : 'Press Play: each record becomes a new live session on AlbionLab, and Stop ends it.')}</span>
+        <span className="muted">{t(recording ? 'The live session on AlbionLab is being created.' : 'Press Play: each record becomes a new live session on AlbionLab, and End closes it.')}</span>
         <a className="button secondary" href={`${status.server}/account`} target="_blank" rel="noreferrer">{t('My sessions')}</a>
       </div>}
-      <div className="albionlab-options">
-        <div className="albionlab-field"><span>{t('Visibility')}</span><Select aria-label={t('Visibility')} value={session?.visibility ?? status.visibility} onChange={visibility => void run(() => post('/api/albionlab/session', { visibility }))}
-          options={[{ value: 'unlisted', label: t('Unlisted — anyone with the link') }, { value: 'public', label: t('Public — listed on AlbionLab') }, { value: 'private', label: t('Private — only me') }]} /></div>
-        <label className="check"><input type="checkbox" checked={session?.anonymize ?? status.anonymize} onChange={event => void run(() => post('/api/albionlab/session', { anonymize: event.target.checked }))} />{t("Hide other players' names")}</label>
-      </div>
+      {session?.error && <p className="albionlab-error">{message(session.error)}</p>}
       {!session && status.session?.error && <p className="albionlab-error">{message(status.session.error)}</p>}
-      <div className="albionlab-options">
-        <label className="check"><input type="checkbox" checked={status.shareLocation} onChange={event => void run(() => post('/api/albionlab/location', { shareLocation: event.target.checked }))} />{t('Share dungeon location (map names)')}</label>
+      <div className="albionlab-grid">
+        <div className="al-col al-name">
+          <span className="al-col-label">{t('Session name')}</span>
+          <SessionName key={session?.id ?? 'none'} title={session?.title ?? null} suggestion={status.suggestedTitle} save={title => void run(() => post('/api/albionlab/session', { title }))} />
+        </div>
+        <div className="al-col">
+          <span className="al-col-label">{t('Visibility')}</span>
+          <Select aria-label={t('Visibility')} value={session?.visibility ?? status.visibility} onChange={visibility => void run(() => post('/api/albionlab/session', { visibility }))}
+            options={[{ value: 'unlisted', label: t('Unlisted — anyone with the link') }, { value: 'public', label: t('Public — listed on AlbionLab') }, { value: 'private', label: t('Private — only me') }]} />
+        </div>
+        <div className="al-col al-checks">
+          <label className="check"><input type="checkbox" checked={session?.anonymize ?? status.anonymize} onChange={event => void run(() => post('/api/albionlab/session', { anonymize: event.target.checked }))} />{t("Hide other players' names")}</label>
+          <label className="check"><input type="checkbox" checked={status.shareLocation} onChange={event => void run(() => post('/api/albionlab/location', { shareLocation: event.target.checked }))} />{t('Share dungeon location (map names)')}</label>
+        </div>
+      </div>
+      <div className="al-foot">
         <button className="link-button" onClick={() => { if (window.confirm(t('Disconnect this PC from your AlbionLab account?'))) void run(() => post('/api/albionlab/disconnect')); }}>{t('Disconnect account')}</button>
       </div>
     </div>}
@@ -139,6 +149,30 @@ function LanguageSwitch({ language }: { language: Language }) {
   return <div className="segmented language-switch" role="group" aria-label={t('Language')}>
     {(['en', 'pt'] as const).map(value => <button key={value} lang={value === 'pt' ? 'pt-BR' : 'en'} className={language === value ? 'active' : ''} aria-pressed={language === value}
       title={value === 'pt' ? 'Português' : 'English'} onClick={() => setLanguage(value)}>{value.toUpperCase()}</button>)}
+  </div>;
+}
+
+/** Asks before Reset (wipes the current count) or End (closes the session), each explained in its own words. Escape or the backdrop cancels. */
+function ConfirmModal({ kind, onCancel, onConfirm }: { kind: 'reset' | 'end'; onCancel: () => void; onConfirm: () => void }) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onCancel(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onCancel]);
+  const reset = kind === 'reset';
+  return <div className="modal-backdrop" onClick={onCancel}>
+    <div className="modal" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
+      <div className={`modal-icon ${reset ? 'warn' : 'bad'}`}><Icon name={reset ? 'history' : 'stop'} size={20} /></div>
+      <h3>{t(reset ? 'Reset the count?' : 'End the session?')}</h3>
+      <p>{t(reset
+        ? 'This clears the damage, healing and time of the current record. The players and the AlbionLab session stay.'
+        : 'This finishes this session and its AlbionLab live session. Press Play to start a new one.')}</p>
+      <div className="modal-actions">
+        <button className="button" onClick={onCancel}>{t('Cancel')}</button>
+        <button className={`button ${reset ? 'hold' : 'danger-solid'}`} autoFocus onClick={onConfirm}>
+          <Icon name={reset ? 'history' : 'stop'} size={13} />{t(reset ? 'Reset' : 'End session')}</button>
+      </div>
+    </div>
   </div>;
 }
 
@@ -157,9 +191,8 @@ function Meter() {
   const [metric, setMetric] = useState<Metric>('damage');
   const [view, setView] = useState<'meter' | 'capture' | 'game'>('meter');
   const [catalogTab, setCatalogTab] = useState<'weapons' | 'maps'>('weapons');
-  // Reset and End wipe or close the session, so each one arms on the first click and only runs on a second; it disarms on its own after a moment.
+  // Reset wipes the count and End closes the session, so each opens a modal that asks before it runs.
   const [confirm, setConfirm] = useState<'reset' | 'end' | null>(null);
-  useEffect(() => { if (!confirm) return; const timer = setTimeout(() => setConfirm(null), 3200); return () => clearTimeout(timer); }, [confirm]);
   const data = snapshot;
   const live = data?.mode === 'live';
   const status = live ? data.status : 'idle';
@@ -188,25 +221,33 @@ function Meter() {
       {view !== 'capture' && <CaptureNotice openCapture={() => setView('capture')} />}
       {view === 'meter' && <>
         <section className="panel mini-controls">
-          <div className="mini-time"><span className="muted">{t('Encounter')}</span><strong>{duration(live ? data.elapsedSeconds : 0)}</strong></div>
-          <div className="mini-buttons">
-            <div className="btn-group count">
-              {status === 'running' && <button className="button hold wide" disabled={!canControl} onClick={() => void command('pause-record')}><Icon name="pause" size={13} />{t('Pause')}</button>}
-              {status === 'paused' && <button className="button go wide" disabled={!canControl} onClick={() => void command('resume-record')}><Icon name="play" size={13} />{t('Resume')}</button>}
-              {(status === 'idle' || status === 'completed') && <button className="button go wide" disabled={!canControl} onClick={() => void command('start-record')}><Icon name="play" size={13} />{t('Play')}</button>}
+          <div className="mini-time">
+            <span className="eyebrow">{t('Current session')}</span>
+            <div className="mini-clock"><span className="muted">{t('Encounter')}</span><strong>{duration(live ? data.elapsedSeconds : 0)}</strong></div>
+          </div>
+          <div className="mini-actions">
+            <div className="mini-buttons">
+              <div className="btn-group count">
+                {status === 'running' && <button className="button hold wide" disabled={!canControl} onClick={() => void command('pause-record')}><Icon name="pause" size={13} />{t('Pause')}</button>}
+                {status === 'paused' && <button className="button go wide" disabled={!canControl} onClick={() => void command('resume-record')}><Icon name="play" size={13} />{t('Resume')}</button>}
+                {(status === 'idle' || status === 'completed') && <button className="button go wide" disabled={!canControl} onClick={() => void command('start-record')}><Icon name="play" size={13} />{t('Play')}</button>}
+              </div>
+              {(status === 'running' || status === 'paused') && <div className="btn-group session">
+                <button className="button ghost" disabled={!canControl}
+                  title={t('Clear damage and healing and count again from zero, keeping the players and the AlbionLab session')}
+                  onClick={() => setConfirm('reset')}>
+                  <Icon name="history" size={13} />{t('Reset')}</button>
+                <button className="button danger" disabled={!canControl}
+                  title={t('End the session and its AlbionLab live session')}
+                  onClick={() => setConfirm('end')}>
+                  <Icon name="stop" size={13} />{t('End session')}</button>
+              </div>}
             </div>
-            {(status === 'running' || status === 'paused') && <div className="btn-group session">
-              <button className={`button ghost${confirm === 'reset' ? ' armed' : ''}`} disabled={!canControl}
-                title={t('Clear damage and healing and count again from zero, keeping the players and the AlbionLab session')}
-                onClick={() => { if (confirm === 'reset') { setConfirm(null); void command('new-record'); } else setConfirm('reset'); }}>
-                <Icon name="history" size={13} />{confirm === 'reset' ? t('Reset the count?') : t('Reset')}</button>
-              <button className={`button danger${confirm === 'end' ? ' armed' : ''}`} disabled={!canControl}
-                title={t('End the session and its AlbionLab live session')}
-                onClick={() => { if (confirm === 'end') { setConfirm(null); void command('stop-record'); } else setConfirm('end'); }}>
-                <Icon name="stop" size={13} />{confirm === 'end' ? t('End the session?') : t('End')}</button>
-            </div>}
+            {(status === 'running' || status === 'paused') && <p className="session-note"><Icon name="info" size={12} />{t('Ending closes this session — your next Play opens a new one.')}</p>}
           </div>
         </section>
+        {confirm && <ConfirmModal kind={confirm} onCancel={() => setConfirm(null)}
+          onConfirm={() => { const choice = confirm; setConfirm(null); void command(choice === 'reset' ? 'new-record' : 'stop-record'); }} />}
         <AlbionLabCard recording={status === 'running' || status === 'paused'} />
         <section className="panel mini-bars">
           <div className="panel-heading">

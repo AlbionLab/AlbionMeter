@@ -94,6 +94,19 @@ main { display: flex; flex-direction: column; gap: 14px; }
 .button.primary, .button[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .button.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-ink); }
 .button.disabled { opacity: .4; pointer-events: none; }
+/* Go (play / resume) and hold (pause): the frequent, reversible counting controls, coloured like traffic signals. */
+.button.go { background: var(--good); border-color: var(--good); color: #052b16; font-weight: 600; }
+.button.go:hover:not(:disabled) { background: #55d98c; border-color: #55d98c; color: #052b16; }
+.button.hold { background: var(--warn); border-color: var(--warn); color: #241a00; font-weight: 600; }
+.button.hold:hover:not(:disabled) { background: #efbb5b; border-color: #efbb5b; color: #241a00; }
+.button.wide { min-width: 116px; }
+/* Ghost (reset) and danger (end): the rare, destructive session controls — quiet until armed, when they fill in. */
+.button.ghost { background: transparent; border-color: var(--border); color: var(--muted); }
+.button.ghost:hover:not(:disabled) { color: var(--text); border-color: var(--border-strong); background: var(--surface-2); }
+.button.ghost.armed { color: var(--text); border-color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.button.danger { background: transparent; border-color: color-mix(in srgb, var(--bad) 55%, transparent); color: var(--bad); }
+.button.danger:hover:not(:disabled) { background: var(--bad); border-color: var(--bad); color: #2a0806; }
+.button.danger.armed { background: var(--bad); border-color: var(--bad); color: #2a0806; font-weight: 600; }
 select { height: 32px; padding: 0 30px 0 11px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23808a9b' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center; color: var(--text-2); font-size: 12.5px; appearance: none; cursor: pointer; }
 select:hover:not(:disabled) { border-color: #3a4558; color: var(--text); }
 .search { width: 180px; height: 32px; padding: 0 11px 0 32px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23545e6f' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E") no-repeat 11px center; color: var(--text); font-size: 12.5px; }
@@ -606,7 +619,11 @@ dd { margin: 0; color: var(--text-2); font-family: var(--mono); font-size: 12px;
 .mini-controls { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 16px 18px; }
 .mini-time { display: flex; flex-direction: column; }
 .mini-time strong { font-family: var(--mono); font-size: 26px; }
-.mini-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+.mini-buttons { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.btn-group { display: flex; gap: 8px; }
+/* A thin rule sets the session controls apart from the counting controls, so Reset and End read as a different kind of action. */
+.btn-group.session { padding-left: 14px; border-left: 1px solid var(--border); }
+@media (max-width: 460px) { .btn-group.session { padding-left: 0; border-left: 0; } }
 .mini-bars .panel-heading { flex-wrap: wrap; gap: 10px; }
 .mini-empty { padding: 28px 18px; color: var(--muted); text-align: center; }
 .bars { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 10px 14px 16px; list-style: none; }

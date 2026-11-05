@@ -157,6 +157,9 @@ function Meter() {
   const [metric, setMetric] = useState<Metric>('damage');
   const [view, setView] = useState<'meter' | 'capture' | 'game'>('meter');
   const [catalogTab, setCatalogTab] = useState<'weapons' | 'maps'>('weapons');
+  // Reset and End wipe or close the session, so each one arms on the first click and only runs on a second; it disarms on its own after a moment.
+  const [confirm, setConfirm] = useState<'reset' | 'end' | null>(null);
+  useEffect(() => { if (!confirm) return; const timer = setTimeout(() => setConfirm(null), 3200); return () => clearTimeout(timer); }, [confirm]);
   const data = snapshot;
   const live = data?.mode === 'live';
   const status = live ? data.status : 'idle';
@@ -187,11 +190,21 @@ function Meter() {
         <section className="panel mini-controls">
           <div className="mini-time"><span className="muted">{t('Encounter')}</span><strong>{duration(live ? data.elapsedSeconds : 0)}</strong></div>
           <div className="mini-buttons">
-            {status === 'running' && <button className="button secondary" disabled={!canControl} onClick={() => void command('pause-record')}><Icon name="pause" size={13} />{t('Pause')}</button>}
-            {status === 'paused' && <button className="button primary" disabled={!canControl} onClick={() => void command('resume-record')}><Icon name="play" size={13} />{t('Resume')}</button>}
-            {(status === 'idle' || status === 'completed') && <button className="button primary" disabled={!canControl} onClick={() => void command('start-record')}><Icon name="play" size={13} />{t('Play')}</button>}
-            {(status === 'running' || status === 'paused') && <button className="button secondary" disabled={!canControl} onClick={() => void command('stop-record')}><Icon name="stop" size={13} />{t('Stop')}</button>}
-            {(status === 'running' || status === 'paused') && <button className="button secondary" disabled={!canControl} title={t('Clear damage and healing and count again from zero, keeping the players and the AlbionLab session')} onClick={() => void command('new-record')}><Icon name="history" size={13} />{t('Reset')}</button>}
+            <div className="btn-group count">
+              {status === 'running' && <button className="button hold wide" disabled={!canControl} onClick={() => void command('pause-record')}><Icon name="pause" size={13} />{t('Pause')}</button>}
+              {status === 'paused' && <button className="button go wide" disabled={!canControl} onClick={() => void command('resume-record')}><Icon name="play" size={13} />{t('Resume')}</button>}
+              {(status === 'idle' || status === 'completed') && <button className="button go wide" disabled={!canControl} onClick={() => void command('start-record')}><Icon name="play" size={13} />{t('Play')}</button>}
+            </div>
+            {(status === 'running' || status === 'paused') && <div className="btn-group session">
+              <button className={`button ghost${confirm === 'reset' ? ' armed' : ''}`} disabled={!canControl}
+                title={t('Clear damage and healing and count again from zero, keeping the players and the AlbionLab session')}
+                onClick={() => { if (confirm === 'reset') { setConfirm(null); void command('new-record'); } else setConfirm('reset'); }}>
+                <Icon name="history" size={13} />{confirm === 'reset' ? t('Reset the count?') : t('Reset')}</button>
+              <button className={`button danger${confirm === 'end' ? ' armed' : ''}`} disabled={!canControl}
+                title={t('End the session and its AlbionLab live session')}
+                onClick={() => { if (confirm === 'end') { setConfirm(null); void command('stop-record'); } else setConfirm('end'); }}>
+                <Icon name="stop" size={13} />{confirm === 'end' ? t('End the session?') : t('End')}</button>
+            </div>}
           </div>
         </section>
         <AlbionLabCard recording={status === 'running' || status === 'paused'} />

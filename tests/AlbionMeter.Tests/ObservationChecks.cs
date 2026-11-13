@@ -5,6 +5,27 @@ internal static class ObservationChecks
 {
     public static void Run(Action<string, Action> test, Action<bool> assert)
     {
+        test("A weapon-exclusive frost effect is credited to the worn staff, not a phantom base staff of another family", () =>
+        {
+            // Frost staves share most abilities; the game data lists each shared/signature effect under a single artifact.
+            // A player holding a Chillhowl who is credited an effect the data maps only to the Arctic Staff family must keep
+            // the damage on the Chillhowl they actually wield, not on an invented tier-less Arctic Staff.
+            var catalog = AlbionMeter.Core.CombatSourceCatalog.Load(Path.Combine(AppContext.BaseDirectory, "assets", "combat.json"));
+            assert(catalog is not null);
+            const int chillhowl = 7346;        // T7_MAIN_FROSTSTAFF_AVALON (Grandmaster's Chillhowl), the worn weapon
+            const int arctic = 7356;           // T4_2H_FROSTSTAFF_CRYSTAL (Arctic Staff), the family representative the fallback used to invent
+            const int arcticOnlyEffect = 3338; // FROST_TARGETED_CHANNEL_EFFECT, produced only by the Arctic family in the game data
+            var id = Guid.NewGuid();
+            var local = new LocalCharacterSnapshot(id, 10, "KPey", null, null, "one", null, "observed", 1, "flow");
+            var combat = new CapturedCombatObservation(catalog!);
+            combat.BeginSession(1_000_000);
+            combat.Observe(new(4, 1, null, new() { [252] = 90, [0] = 10, [2] = new short[] { chillhowl } }), "flow", "equipment", 1_000_001, local, null);
+            combat.Observe(new(4, 1, null, new() { [252] = 6, [0] = 30, [6] = 10, [2] = -500f, [7] = arcticOnlyEffect, [5] = (byte)0 }), "flow", "hit", 2_000_000, local, null);
+            var items = combat.Snapshot!.ItemContributions ?? [];
+            assert(items.Any(item => item.ItemIndex == chillhowl && item.Damage == 500 && item.TierObserved));
+            assert(!items.Any(item => item.ItemIndex == arctic));
+            assert(!items.Any(item => !item.TierObserved));
+        });
         test("Party object evidence arriving before the zone join survives without accepting old zone objects", () =>
         {
             var localId = Guid.NewGuid(); var mateId = Guid.NewGuid(); var strangerId = Guid.NewGuid();

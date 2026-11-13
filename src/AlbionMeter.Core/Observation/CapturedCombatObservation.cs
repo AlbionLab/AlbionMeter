@@ -510,7 +510,12 @@ public sealed class CapturedCombatObservation(CombatSourceCatalog? sources = nul
         if (sources?.UniqueFamily(effect.Spell.Value) is { } family)
         {
             var slotIndex = SlotIndex(family.Slot);
-            if (slotIndex >= 0 && gear?.ElementAtOrDefault(slotIndex) is > 0 and var worn && sources.SameFamily(worn, family.Index!.Value)) { Count("sourceFromItemFamily"); return family with { Index = worn, Exact = true }; }
+            if (slotIndex >= 0 && gear?.ElementAtOrDefault(slotIndex) is > 0 and var worn && family.Index is { } familyIndex && sources.SameFamily(worn, familyIndex)) { Count("sourceFromItemFamily"); return family with { Index = worn, Exact = true }; }
+            // The effect is exclusive to one weapon family, but this player's mainhand is known to be a different weapon. A player
+            // wields a single weapon, so a weapon-exclusive effect credited to them comes from the weapon they actually hold — not
+            // a tier-less phantom of a weapon they are not wielding (frost-staff artifacts share abilities the game data lists under
+            // only one of them). Credit the worn weapon instead of inventing a base-tier source under a different name.
+            if (slotIndex == 0 && gear?.ElementAtOrDefault(0) is > 0 and var mainhand) { Count("sourceFromWornWeaponOverFamily"); return new(mainhand, "mainhand", family.Kind, true); }
             Count("sourceFromItemFamilyTierUnknown");
             return family;
         }

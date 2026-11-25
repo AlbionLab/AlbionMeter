@@ -420,21 +420,27 @@ ipcMain.on('desktop:startup', (_event, action) => {
   else if (action === 'quit') app.quit();
 });
 
-ipcMain.handle('desktop:permission', async () => {
-  if (process.platform !== 'linux' || !executable || booting) return false;
-  if ((await run('pkexec', ['setcap', 'cap_net_raw=ep', executable])) === null) return false;
-  booting = true;
-  try {
-    await stopServer();
-    await startServer();
-    return true;
-  } catch (error) {
-    log(`restart after permission failed: ${error.message}`);
-    crashed(null);
-    return false;
-  } finally {
-    booting = false;
-  }
+// One grant at a time: the Capture view forgets it is waiting when it is left and opened again, and a second request
+// would open another password prompt and restart the service under the first one while it is still starting.
+let granting = null;
+ipcMain.handle('desktop:permission', () => {
+  granting ??= (async () => {
+    if (process.platform !== 'linux' || !executable || booting) return false;
+    if ((await run('pkexec', ['setcap', 'cap_net_raw=ep', executable])) === null) return false;
+    booting = true;
+    try {
+      await stopServer();
+      await startServer();
+      return true;
+    } catch (error) {
+      log(`restart after permission failed: ${error.message}`);
+      crashed(null);
+      return false;
+    } finally {
+      booting = false;
+    }
+  })().finally(() => { granting = null; });
+  return granting;
 });
 
 ipcMain.on('desktop:update', async (_event, action) => {

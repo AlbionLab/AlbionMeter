@@ -27,43 +27,60 @@ try {
   const device = devices.devices.find(value => value.name === 'raw:any');
   assert.equal((await post('/api/capture/start', { method: 'socket', device: device.name })).status, 200);
   for (let i = 0; i < 50 && (await json('/api/capture/status')).state === 'starting'; i++) await sleep(100);
-  const idle = await json('/api/session');
-  assert.equal(idle.status, 'idle'); assert.equal(idle.elapsedSeconds, 0); assert.equal(idle.eventCount, 0);
-  assert.equal((await post('/api/session/resume-record')).status, 409);
-  browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
-  const errors = []; page.on('pageerror', error => errors.push(error.message));
-  await page.goto(base);
-  await sleep(500);
-  const startResponse = page.waitForResponse(response => response.url().endsWith('/api/session/start-record'));
-  await page.getByRole('button', { name: 'Play', exact: true }).click();
-  const startResult = await startResponse; assert.equal(startResult.status(), 200);
-  await page.getByRole('button', { name: 'Pause', exact: true }).waitFor();
-  const first = await json('/api/session'); assert.equal(first.status, 'running');
-  await page.getByRole('button', { name: 'Pause', exact: true }).click();
-  await page.getByRole('button', { name: 'Resume', exact: true }).waitFor();
-  const paused = await json('/api/session'); assert.equal(paused.id, first.id); assert.equal(paused.status, 'paused');
-  await sleep(300); assert.equal((await json('/api/session')).elapsedSeconds, paused.elapsedSeconds);
-  await page.getByRole('button', { name: 'Resume', exact: true }).click();
-  await page.getByRole('button', { name: 'Pause', exact: true }).waitFor();
-  assert.equal((await json('/api/session')).id, first.id);
-  await page.getByRole('button', { name: 'Stop', exact: true }).click();
-  await page.getByRole('button', { name: 'Play', exact: true }).waitFor();
-  // Stop ends the record only: the capture keeps running, so the next Play still knows every player.
-  assert.equal((await json('/api/capture/status')).state, 'running');
-  assert.equal((await json('/api/session')).status, 'completed');
-  assert.ok((await json('/api/encounters')).some(record => record.id === first.id));
-  assert.equal((await post('/api/session/resume-record')).status, 409);
-  await page.getByRole('button', { name: 'Play', exact: true }).click();
-  await page.getByRole('button', { name: 'Pause', exact: true }).waitFor();
-  const next = await json('/api/session'); assert.notEqual(next.id, first.id);
-  assert.equal(next.eventCount, 0); assert.equal(next.totalDamage, 0); assert.equal(next.totalHealing, 0);
-  assert.equal(next.weaponContributions.length, 0); assert.equal(next.itemContributions.length, 0);
-  await page.getByRole('button', { name: 'Stop', exact: true }).click();
-  await page.getByRole('button', { name: 'Play', exact: true }).waitFor();
-  assert.equal((await json('/api/encounters')).length, 2);
-  assert.deepEqual(errors, []);
-  console.log('PASS capture alone remains idle; Play/Pause/Resume/Stop UI; network shutdown; fresh encounter IDs; saved history; zero totals and contributions');
+  // Without CAP_NET_RAW the socket cannot open: Play would end its record at once, so the rest cannot run here.
+  const capture = await json('/api/capture/status');
+  if (capture.state === 'failed' && /permission|CAP_NET_RAW/i.test(capture.error ?? '')) {
+    console.log(`BLOCKED packet capture permission is missing (${capture.error}); run: sudo setcap cap_net_raw=ep src/AlbionMeter.Server/bin/Debug/net10.0/AlbionMeter.Server`);
+    process.exitCode = 77;
+  } else {
+    const idle = await json('/api/session');
+    assert.equal(idle.status, 'idle'); assert.equal(idle.elapsedSeconds, 0); assert.equal(idle.eventCount, 0);
+    assert.equal((await post('/api/session/resume-record')).status, 409);
+    browser = await chromium.launch();
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, locale: 'en-US' });
+    // End session asks first; the modal's own End session button confirms it.
+    const end = async () => {
+      await page.getByRole('button', { name: 'End session', exact: true }).click();
+      await page.getByRole('dialog').getByRole('button', { name: 'End session', exact: true }).click();
+    };
+    const errors = []; page.on('pageerror', error => errors.push(error.message));
+    await page.goto(base);
+    await sleep(500);
+    const startResponse = page.waitForResponse(response => response.url().endsWith('/api/session/start-record'));
+    await page.getByRole('button', { name: 'Play', exact: true }).click();
+    const startResult = await startResponse; assert.equal(startResult.status(), 200);
+    await page.getByRole('button', { name: 'Pause', exact: true }).waitFor();
+    const first = await json('/api/session'); assert.equal(first.status, 'running');
+    await page.getByRole('button', { name: 'Pause', exact: true }).click();
+    await page.getByRole('button', { name: 'Resume', exact: true }).waitFor();
+    const paused = await json('/api/session'); assert.equal(paused.id, first.id); assert.equal(paused.status, 'paused');
+    await sleep(300); assert.equal((await json('/api/session')).elapsedSeconds, paused.elapsedSeconds);
+    await page.getByRole('button', { name: 'Resume', exact: true }).click();
+    await page.getByRole('button', { name: 'Pause', exact: true }).waitFor();
+    assert.equal((await json('/api/session')).id, first.id);
+    // Cancelling the confirmation keeps the record going.
+    await page.getByRole('button', { name: 'End session', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click();
+    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    assert.equal((await json('/api/session')).status, 'running');
+    await end();
+    await page.getByRole('button', { name: 'Play', exact: true }).waitFor();
+    // End session ends the record only: the capture keeps running, so the next Play still knows every player.
+    assert.equal((await json('/api/capture/status')).state, 'running');
+    assert.equal((await json('/api/session')).status, 'completed');
+    assert.ok((await json('/api/encounters')).some(record => record.id === first.id));
+    assert.equal((await post('/api/session/resume-record')).status, 409);
+    await page.getByRole('button', { name: 'Play', exact: true }).click();
+    await page.getByRole('button', { name: 'Pause', exact: true }).waitFor();
+    const next = await json('/api/session'); assert.notEqual(next.id, first.id);
+    assert.equal(next.eventCount, 0); assert.equal(next.totalDamage, 0); assert.equal(next.totalHealing, 0);
+    assert.equal(next.weaponContributions.length, 0); assert.equal(next.itemContributions.length, 0);
+    await end();
+    await page.getByRole('button', { name: 'Play', exact: true }).waitFor();
+    assert.equal((await json('/api/encounters')).length, 2);
+    assert.deepEqual(errors, []);
+    console.log('PASS capture alone remains idle; Play/Pause/Resume/End session UI with its confirmation; network shutdown; fresh encounter IDs; saved history; zero totals and contributions');
+  }
 } finally {
   if (browser) await browser.close();
   if (server.exitCode === null) { server.kill('SIGTERM'); await new Promise(resolve => server.once('exit', resolve)); }

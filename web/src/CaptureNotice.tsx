@@ -9,8 +9,14 @@ export function CaptureNotice({ openCapture }: { openCapture: () => void }) {
   const [status, setStatus] = useState<Status | null>(null);
   useEffect(() => {
     let disposed = false;
-    const update = () => fetch('/api/capture/status').then(response => response.ok ? response.json() : null).then(value => { if (!disposed) setStatus(value); }).catch(() => {});
-    void update(); const timer = setInterval(update, 2000);
+    // One poll at a time: a slow answer arriving after a newer one would bring back a stale "not recording" banner.
+    let pending = false;
+    const update = () => {
+      if (pending) return;
+      pending = true;
+      fetch('/api/capture/status').then(response => response.ok ? response.json() : null).then(value => { if (!disposed) setStatus(value); }).catch(() => {}).finally(() => { pending = false; });
+    };
+    update(); const timer = setInterval(update, 2000);
     return () => { disposed = true; clearInterval(timer); };
   }, []);
   if (!status || status.source === 'replay') return null;

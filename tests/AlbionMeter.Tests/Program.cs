@@ -495,6 +495,7 @@ PacketStorageChecks.Run(Test, True);
 HistoryChecks.Run(Test, True);
 ObservationChecks.Run(Test, True);
 MembershipGapChecks.Run(Test, True);
+RaceChecks.Run(Test, True);
 CaptureChecks.Run(Test, True, args.Contains("--native-capture"));
 Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
 Directory.Delete(temporaryDirectory, true);

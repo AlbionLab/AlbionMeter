@@ -14,7 +14,7 @@ public sealed class WeaponIconCache(IConfiguration configuration, MapCatalog cat
         if (sources?.ContainsItem(id) != true && catalog.Data?.IndexedWeapons?.Any(weapon => weapon.Id == id) != true) return null;
         var request = _pending.GetOrAdd(id, key => new(() => Load(key)));
         try { return await request.Value; }
-        finally { _pending.TryRemove(id, out _); }
+        finally { _pending.TryRemove(new KeyValuePair<string, Lazy<Task<byte[]?>>>(id, request)); }
     }
     private async Task<byte[]?> Load(string id)
     {

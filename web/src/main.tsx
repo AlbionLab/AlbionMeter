@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client';
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useMeter } from './useMeter';
 import { CopyDamage } from './CopyDamage';
 import { CapturePanel } from './CapturePanel';
@@ -70,18 +70,38 @@ function AlbionLabCard({ recording }: { recording: boolean }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  // Every change bumps the generation before and after it is sent, so a poll answered from the state before it (or an
+  // earlier change answered late) cannot flip the visibility or a checkbox back.
+  const generation = useRef(0);
+  const connecting = useRef(false);
   useEffect(() => {
     let disposed = false;
-    const load = () => fetch('/api/albionlab').then(response => response.ok ? response.json() : undefined).then(value => { if (!disposed && value) setStatus(value); }).catch(() => undefined);
-    void load();
+    let pending = false;
+    const load = () => {
+      if (pending) return;
+      pending = true;
+      const sent = generation.current;
+      fetch('/api/albionlab').then(response => response.ok ? response.json() : undefined).then(value => { if (!disposed && value && sent === generation.current) setStatus(value); }).catch(() => undefined).finally(() => { pending = false; });
+    };
+    load();
     const timer = setInterval(load, 2000);
     return () => { disposed = true; clearInterval(timer); };
   }, []);
   const run = async (action: () => Promise<Status>) => {
     setError('');
-    try { setStatus(await action()); } catch (failure) { setError(failure instanceof Error ? message(failure.message) : t('AlbionLab is unavailable.')); }
+    const sent = ++generation.current;
+    try {
+      const next = await action();
+      if (sent === generation.current) { generation.current++; setStatus(next); }
+    } catch (failure) { setError(failure instanceof Error ? message(failure.message) : t('AlbionLab is unavailable.')); }
   };
-  const connect = () => run(async () => {
+  // A double click would ask for two pairing codes and open the approval page twice.
+  const connect = async () => {
+    if (connecting.current) return;
+    connecting.current = true;
+    try { await pair(); } finally { connecting.current = false; }
+  };
+  const pair = () => run(async () => {
     const next = await post<Status>('/api/albionlab/connect');
     if (next.pairing) window.open(next.pairing.verifyUrl, '_blank', 'noopener');
     return next;
@@ -228,18 +248,19 @@ function Meter() {
           <div className="mini-actions">
             <div className="mini-buttons">
               <div className="btn-group count">
-                {status === 'running' && <button className="button hold wide" disabled={!canControl} onClick={() => void command('pause-record')}><Icon name="pause" size={13} />{t('Pause')}</button>}
-                {status === 'paused' && <button className="button go wide" disabled={!canControl} onClick={() => void command('resume-record')}><Icon name="play" size={13} />{t('Resume')}</button>}
-                {(status === 'idle' || status === 'completed') && <button className="button go wide" disabled={!canControl} onClick={() => void command('start-record')}><Icon name="play" size={13} />{t('Play')}</button>}
+                {/* Play, Pause and Resume take each other's place and End sits where Play was: the second click of a double click would undo the first. */}
+                {status === 'running' && <button className="button hold wide" disabled={!canControl} onClick={event => { if (event.detail <= 1) void command('pause-record'); }}><Icon name="pause" size={13} />{t('Pause')}</button>}
+                {status === 'paused' && <button className="button go wide" disabled={!canControl} onClick={event => { if (event.detail <= 1) void command('resume-record'); }}><Icon name="play" size={13} />{t('Resume')}</button>}
+                {(status === 'idle' || status === 'completed') && <button className="button go wide" disabled={!canControl} onClick={event => { if (event.detail <= 1) void command('start-record'); }}><Icon name="play" size={13} />{t('Play')}</button>}
               </div>
               {(status === 'running' || status === 'paused') && <div className="btn-group session">
                 <button className="button ghost" disabled={!canControl}
                   title={t('Clear damage and healing and count again from zero, keeping the players and the AlbionLab session')}
-                  onClick={() => setConfirm('reset')}>
+                  onClick={event => { if (event.detail <= 1) setConfirm('reset'); }}>
                   <Icon name="history" size={13} />{t('Reset')}</button>
                 <button className="button danger" disabled={!canControl}
                   title={t('End the session and its AlbionLab live session')}
-                  onClick={() => setConfirm('end')}>
+                  onClick={event => { if (event.detail <= 1) setConfirm('end'); }}>
                   <Icon name="stop" size={13} />{t('End session')}</button>
               </div>}
             </div>

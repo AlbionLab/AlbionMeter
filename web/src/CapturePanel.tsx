@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { precise } from './types';
 import { Section, StatCard, StatusPill } from './ui';
 import { Select } from './Select';
@@ -25,6 +25,8 @@ export function CapturePanel() {
   const [granting, setGranting] = useState(false);
   const [host, setHost] = useState<{ executable: string | null; platform: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  // Bumped by each command, so a status poll sent before Start or Stop answered cannot show the old state and re-enable Start.
+  const generation = useRef(0);
   useEffect(() => { fetch('/api/health').then(response => response.json()).then(setHost).catch(() => setHost(null)); }, []);
   useEffect(() => {
     let disposed = false;
@@ -43,11 +45,12 @@ export function CapturePanel() {
     async function update() {
       if (pending) return;
       pending = true;
+      const sent = generation.current;
       try {
         const response = await fetch('/api/capture/status');
         if (!response.ok) throw new Error(t('Capture status is unavailable.'));
         const value = await response.json();
-        if (!disposed) { setStatus(value); setPollError(''); }
+        if (!disposed && sent === generation.current) { setStatus(value); setPollError(''); }
       } catch (reason) { if (!disposed) setPollError(String(reason)); }
       finally { pending = false; }
     }
@@ -56,6 +59,7 @@ export function CapturePanel() {
   }, []);
   async function command(action: string, file?: File) {
     setBusy(true); setError('');
+    generation.current++;
     try {
       let body: BodyInit | undefined;
       const headers: Record<string, string> = { 'X-Albion-Meter': 'local' };
@@ -66,6 +70,7 @@ export function CapturePanel() {
       const response = await fetch(`/api/capture/${action}`, { method: 'POST', headers, body });
       const value = await response.json();
       if (!response.ok) throw new Error(message(value.error ?? 'Capture operation failed.'));
+      generation.current++;
       setStatus(value);
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setBusy(false); }

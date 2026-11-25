@@ -118,7 +118,8 @@ export function GameLibrary({ tab, onTab: setTab }: { tab: 'weapons' | 'maps'; o
   const [storage, setStorage] = useState('');
   useEffect(() => {
     let disposed = false;
-    fetch('/api/catalog').then(async response => { if (!response.ok) throw new Error(t('No map catalog is available.')); const data = await response.json(); if (!disposed) setCatalog(data); }).catch(error => { if (!disposed) setMessage(String(error)); });
+    // A folder imported before this first load answered is newer than what the load brings back.
+    fetch('/api/catalog').then(async response => { if (!response.ok) throw new Error(t('No map catalog is available.')); const data = await response.json(); if (!disposed) setCatalog(current => current ?? data); }).catch(error => { if (!disposed) setMessage(String(error)); });
     fetch('/api/storage').then(response => response.json()).then(data => { if (!disposed) setStorage(data.databasePath); }).catch(() => { if (!disposed) setStorage(t('Storage information unavailable.')); });
     return () => { disposed = true; };
   }, []);

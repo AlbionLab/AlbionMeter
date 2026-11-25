@@ -51,10 +51,13 @@ public sealed class AlbionLabService(IConfiguration configuration, MeterSession 
     {
         get
         {
-            if (settings is not null) return settings;
-            try { settings = File.Exists(settingsPath) ? JsonSerializer.Deserialize<Settings>(File.ReadAllText(settingsPath), Json) ?? new() : new(); }
-            catch (Exception error) when (error is IOException or JsonException) { settings = new(); }
-            return settings;
+            lock (gate)
+            {
+                if (settings is not null) return settings;
+                try { settings = File.Exists(settingsPath) ? JsonSerializer.Deserialize<Settings>(File.ReadAllText(settingsPath), Json) ?? new() : new(); }
+                catch (Exception error) when (error is IOException or JsonException) { settings = new(); }
+                return settings;
+            }
         }
     }
 
@@ -156,7 +159,7 @@ public sealed class AlbionLabService(IConfiguration configuration, MeterSession 
         if (response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellation);
-            lock (gate) session = current with { Visibility = body.GetProperty("visibility").GetString()!, Anonymize = body.GetProperty("anonymize").GetBoolean(), Title = body.TryGetProperty("title", out var named) && named.ValueKind == JsonValueKind.String ? named.GetString() : null, Error = null };
+            lock (gate) if (session?.Id == current.Id) session = session with { Visibility = body.GetProperty("visibility").GetString()!, Anonymize = body.GetProperty("anonymize").GetBoolean(), Title = body.TryGetProperty("title", out var named) && named.ValueKind == JsonValueKind.String ? named.GetString() : null, Error = null };
         }
         else lock (gate) if (session?.Id == current.Id) session = session with { Error = $"AlbionLab did not save the change ({(int)response.StatusCode})." };
         return Status();
@@ -232,7 +235,9 @@ public sealed class AlbionLabService(IConfiguration configuration, MeterSession 
         else if (publishedStart is { } start && start != record.StartedAt) lock (gate) compactor.Reset();
         publishedStart = record.StartedAt;
         var connection = await Hub(token, cancellation);
-        if (connection is null || session is not { Id.Length: > 0 }) return;
+        AlbionLabSession? live;
+        lock (gate) live = session;
+        if (connection is null || live is not { Id.Length: > 0 }) return;
         var self = capture.Status.Report?.Character?.CharacterId.ToString();
         var share = Current.ShareLocation;
         var runs = meter.Dungeons().Where(run => run.StartedAt >= record.StartedAt - TimeSpan.FromSeconds(5)).ToList();
@@ -250,21 +255,21 @@ public sealed class AlbionLabService(IConfiguration configuration, MeterSession 
         if (delta is null) return;
         try
         {
-            await connection.InvokeAsync<long>("Publish", session.Id, delta, cancellation);
-            lock (gate) session = session with { State = "live", Error = null, PublishedAt = DateTimeOffset.UtcNow };
-            if (record.Status == "completed") { finishedRecord = record.Id; lock (gate) session = session with { State = "completed" }; }
+            await connection.InvokeAsync<long>("Publish", live.Id, delta, cancellation);
+            lock (gate) if (session?.Id == live.Id) session = session with { State = "live", Error = null, PublishedAt = DateTimeOffset.UtcNow };
+            if (record.Status == "completed") { finishedRecord = record.Id; lock (gate) if (session?.Id == live.Id) session = session with { State = "completed" }; }
         }
         catch (HubException error)
         {
             // The site no longer has this session (deleted, or ended while the meter was away): a record still going on
             // gets a new session on the next tick, sent in full, instead of failing on the old one until Stop.
             var gone = error.Message.Contains("Session not found.", StringComparison.Ordinal) || error.Message.Contains("This session has ended.", StringComparison.Ordinal);
-            var lost = session.Id;
+            var lost = live.Id;
             lock (gate)
             {
                 compactor.Reset();
                 if (gone && record.Status != "completed") { recordId = null; session = null; lastPublished = null; finishedRecord = null; publishedStart = null; }
-                else session = session with { State = "error", Error = error.Message };
+                else if (session?.Id == live.Id) session = session with { State = "error", Error = error.Message };
                 if (gone && record.Status == "completed") finishedRecord = record.Id;
             }
             if (gone) logger.LogInformation("AlbionLab session {Session} is gone ({Reason}); the record continues in a new one", lost, error.Message);

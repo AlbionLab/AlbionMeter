@@ -146,13 +146,13 @@ public sealed class CaptureService(IConfiguration configuration, CharacterContex
     }
     private void RunLive(string device, CancellationToken token, bool recordPrepared, bool resumeRecord)
     {
-        var continuing = _liveAnalysis is not null;
-        var analysis = _liveAnalysis ?? CreateLiveAnalysis();
+        bool continuing; CaptureAnalysis analysis;
+        lock (_analysisGate) { continuing = _liveAnalysis is not null; analysis = _liveAnalysis ??= CreateLiveAnalysis(); }
         try
         {
-            if (!recordPrepared) analysis.BeginCapture(preserveRecord: continuing || resumeRecord, keepIdentities: continuing && _reconnecting);
             lock (_analysisGate)
             {
+                if (!recordPrepared) analysis.BeginCapture(preserveRecord: continuing || resumeRecord, keepIdentities: continuing && _reconnecting);
                 _liveAnalysis = analysis;
                 // Back after a drop: the record goes on where it was, unless it was paused before or meanwhile.
                 if (_reconnecting && _resumeAfterReconnect && analysis.RecordState == "paused") analysis.SetPaused(false, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000);

@@ -20,3 +20,7 @@ libc = "0.2.191"
 
 [dev-dependencies]
 sha2 = "0.10"
+
+# Npcap devices next to the raw sockets on Windows (wpcap.dll is delay-loaded, so the meter starts without Npcap).
+[target.'cfg(windows)'.dependencies]
+meter-capture = { workspace = true, features = ["pcap"] }

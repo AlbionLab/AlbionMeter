@@ -7,7 +7,10 @@ version = "0.2.0"
 edition = "2024"
 
 [workspace.dependencies]
-meter-capture = { path = "crates/meter-capture" }
+# Without libpcap by default: Linux captures through its own packet sockets, and an AppImage linked to the build
+# machine's libpcap (libpcap.so.0.8 on Ubuntu) would not start on distributions that name it libpcap.so.1. Windows
+# turns it on (Npcap, delay-loaded) in meter-runtime.
+meter-capture = { path = "crates/meter-capture", default-features = false }
 meter-core = { path = "crates/meter-core" }
 meter-store = { path = "crates/meter-store" }
 meter-lab = { path = "crates/meter-lab" }

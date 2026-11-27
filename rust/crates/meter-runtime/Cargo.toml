@@ -1,0 +1,6 @@
+[package]
+name = "meter-runtime"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

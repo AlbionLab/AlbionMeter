@@ -91,6 +91,27 @@ jobs:
         if: success() || failure()
         id: release
         run: scripts/ci-run.sh cargo build --release -p meter-app
+      # The shipped executable, headless: a fixture screen, then a synthetic fight replayed through the real runtime, with
+      # throwaway settings and storage (on Windows without Npcap installed: wpcap.dll is delay-loaded).
+      - name: Smoke test
+        if: (success() || failure()) && steps.release.outcome == 'success'
+        id: smoke
+        env:
+          ALBION_METER_PACKAGED: 0
+        run: |
+          export ALBION_METER_CONFIG_DIR="$RUNNER_TEMP/smoke-settings"
+          mkdir -p ../smoke
+          scripts/ci-run.sh cargo run -q -p meter-app --example synthetic-pcap -- ../smoke/pcaps
+          exe="target/release/${{ matrix.exe }}"
+          scripts/ci-run.sh "$exe" --screen meter-damage --screenshot ../smoke/fixture.png
+          scripts/ci-run.sh "$exe" "--Storage:Directory=$RUNNER_TEMP/smoke-storage" --replay ../smoke/pcaps/solo.pcap --screenshot ../smoke/replay.png
+          ls -l ../smoke/*.png
+          echo "::notice title=smoke test (${{ runner.os }})::the release executable rendered a fixture screen and a replayed fight"
+      - uses: actions/upload-artifact@v4
+        if: (success() || failure()) && steps.smoke.outcome != 'skipped'
+        with:
+          name: smoke-${{ runner.os }}
+          path: smoke/*.png
       # Which DLL each executable takes WaitOnAddress from, and anything it imports from vertdll (the enclave runtime).
       - name: Imports
         if: (success() || failure()) && runner.os == 'Windows'

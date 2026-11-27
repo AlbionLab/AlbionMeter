@@ -19,7 +19,7 @@ pub struct NativePcap {
 }
 
 /// On Windows the library is Npcap's wpcap.dll, which may be missing; nothing may call into it before this says yes.
-fn available() -> Result<(), CaptureError> {
+pub(crate) fn available() -> Result<(), CaptureError> {
     #[cfg(windows)]
     if !crate::windows::npcap::load() {
         return Err(CaptureError::Io("Npcap is not installed.".into()));
@@ -137,6 +137,10 @@ mod tests {
 
     #[test]
     fn library_version_is_reported() {
+        // A Windows machine without Npcap (a CI runner) has no library to ask.
+        if available().is_err() {
+            return;
+        }
         assert!(version().unwrap().to_ascii_lowercase().contains("pcap"));
     }
 

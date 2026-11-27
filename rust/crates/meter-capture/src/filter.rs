@@ -166,6 +166,10 @@ pub(crate) mod tests {
     #[cfg(feature = "pcap")]
     #[test]
     fn pcap_filter_matches_user_space_check() {
+        // A Windows machine without Npcap (a CI runner) has no libpcap to compile with.
+        if crate::native_pcap::available().is_err() {
+            return;
+        }
         // libpcap takes the DLT: DLT_RAW is 12 for the file format's LINKTYPE_RAW (101).
         let capture = pcap::Capture::dead(pcap::Linktype(12)).unwrap();
         let program = capture.compile(DEFAULT_FILTER, true).unwrap();

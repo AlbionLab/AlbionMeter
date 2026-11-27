@@ -321,3 +321,38 @@ jobs:
             if ! grep -qxF "$name" <<< "$current"; then gh release delete-asset "$TAG" "$name" --repo "$GITHUB_REPOSITORY" --yes; fi
           done
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "Albion Meter $VERSION (Rust beta) — update feed"
+      # albionlab.app's download page lists one row per file, added through its admin API, and offers each system's newest
+      # version: a new version is added once, pointing at this release's files; the same version pushed again is left alone.
+      - name: Offer rust-v${{ env.VERSION }} on albionlab.app
+        env:
+          ALBIONLAB_EMAIL: ${{ secrets.ALBIONLAB_ADMIN_EMAIL }}
+          ALBIONLAB_PASSWORD: ${{ secrets.ALBIONLAB_ADMIN_PASSWORD }}
+        run: |
+          if [ -z "$ALBIONLAB_EMAIL" ] || [ -z "$ALBIONLAB_PASSWORD" ]; then
+            echo "::warning title=albionlab.app::ALBIONLAB_ADMIN_EMAIL/ALBIONLAB_ADMIN_PASSWORD are not set: add $VERSION to the download page by hand."
+            exit 0
+          fi
+          python3 - <<'EOF'
+          import json, os, http.cookiejar, urllib.request
+          version = os.environ['VERSION']
+          base = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/releases/download/rust-v{version}/"
+          files = [('windows', 'installer', None, 'AlbionLab.AlbionMeter-rust-win-Setup.exe'),
+                   ('windows', 'archive', None, 'AlbionLab.AlbionMeter-rust-win-Portable.zip'),
+                   ('linux', 'installer', 'AppImage · x64', 'AlbionLab.AlbionMeter-rust-linux.AppImage')]
+          for *_, name in files:
+              assert os.path.exists(f'packages/{name}'), f'{name} is not in this release'
+          opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+          def call(method, path, body=None):
+              request = urllib.request.Request('https://albionlab.app/api/admin' + path, None if body is None else json.dumps(body).encode(), method=method,
+                                               headers={'X-Admin-Request': '1', 'Content-Type': 'application/json', 'User-Agent': 'albionmeter-ci'})
+              with opener.open(request, timeout=30) as response:
+                  text = response.read()
+                  return json.loads(text) if text else None
+          call('POST', '/login', {'email': os.environ['ALBIONLAB_EMAIL'], 'password': os.environ['ALBIONLAB_PASSWORD']})
+          if any(row['version'] == version for row in call('GET', '/releases')):
+              print(f'::notice title=albionlab.app::{version} is already on the download page'); raise SystemExit
+          for platform, kind, label, name in files:
+              row = call('POST', '/releases', {'version': version, 'platform': platform, 'architecture': 'x64', 'kind': kind, 'label': label,
+                                               'externalUrl': base + name, 'visible': True})
+              print(f"::notice title=albionlab.app::{platform} {kind} {version} -> https://albionlab.app{row['url']}")
+          EOF

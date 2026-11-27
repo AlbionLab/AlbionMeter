@@ -1,5 +1,5 @@
 name: Rust
-# Albion Meter (rust/): lint, tests, the release build and the Velopack packages, on Linux and Windows. A push to `rust`
+# Albion Meter (rust/): lint, tests, the release build and the Velopack packages, on Linux and Windows. A push to `main`
 # also publishes them:
 #   - `rust-v<version>`: the release of this version (Setup.exe, AppImage, the full packages), with the version taken from
 #     rust/Cargo.toml; pushing again without a new version replaces its files, as electron-builder's release does;
@@ -9,9 +9,9 @@ name: Rust
 # Rust meter itself, so a player still on any older Electron version updates to it and from there moves to Rust.
 on:
   push:
-    branches: [rust]
+    branches: [main]
   pull_request:
-    branches: [rust]
+    branches: [main]
 permissions:
   contents: read
 # A newer push cancels a pull request's checks; a push's run always finishes, so a release is never left half done.

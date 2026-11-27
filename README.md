@@ -135,9 +135,9 @@ cargo test --workspace
 
 ### Releases
 
-The version comes from `version` in `rust/Cargo.toml`. Every push to `rust` runs `.github/workflows/rust.yml` on Linux
+The version comes from `version` in `rust/Cargo.toml`. Every push to `main` runs `.github/workflows/rust.yml` on Linux
 and Windows (clippy, tests, the release build, a smoke test of the executable) and packages the meter with Velopack.
-When every check passes, a push to `rust` publishes the release `rust-v<version>` (a new version creates it, the same version replaces
+When every check passes, a push to `main` publishes the release `rust-v<version>` (a new version creates it, the same version replaces
 its files, with `SHA256SUMS.txt`) and refreshes `rust-latest`, the update feed installed meters read.
 
 ### Layout

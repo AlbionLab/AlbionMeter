@@ -268,7 +268,8 @@ fn capture_notice_pending_players_and_interface_errors() {
     assert_eq!(ui.app.global::<MeterState>().get_notice_pending(), "45");
     let ui = start("capture-devices-error", Language::En);
     assert_eq!(ui.app.global::<CaptureState>().get_devices_error(), "Packet capture permission denied: run Albion Meter as administrator.");
-    assert_eq!(ui.app.global::<CaptureState>().get_hint(), "grant");
+    // Windows asks for a restart as administrator; Linux offers the password prompt.
+    assert_eq!(ui.app.global::<CaptureState>().get_hint(), if cfg!(windows) { "windows" } else { "grant" });
     // Start and Stop go to the engine with the chosen interface.
     let ui = start("capture", Language::En);
     ui.controller.borrow_mut().handle(FeedEvent::Capture(std::sync::Arc::new(CaptureStatus { state: "stopped".into(), source: "none".into(), ..CaptureStatus::default() })));

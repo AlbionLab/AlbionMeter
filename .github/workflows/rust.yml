@@ -25,8 +25,6 @@ jobs:
             exe: meter-app
           - os: windows-latest
             exe: meter-app.exe
-            # One test at a time: libtest names each test before it runs, so a crash (no panic, no output) names its test.
-            test_args: -- --test-threads=1
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -112,7 +110,8 @@ jobs:
         with:
           name: smoke-${{ runner.os }}
           path: smoke/*.png
-      # Which DLL each executable takes WaitOnAddress from, and anything it imports from vertdll (the enclave runtime).
+      # Which DLL each executable takes WaitOnAddress from; nothing may come from vertdll (the enclave runtime: pcap's
+      # windows-sys 0.36 import library binds WaitOnAddress there, see meter-app/build.rs).
       - name: Imports
         if: (success() || failure()) && runner.os == 'Windows'
         run: |
@@ -125,6 +124,7 @@ jobs:
                   print(message['executable'])" | tail -1)
           python3 -c "
           import pefile, sys
+          wrong = []
           for path in sys.argv[1:]:
               if not path:
                   continue
@@ -137,7 +137,12 @@ jobs:
                       names = [imp.name.decode() for imp in entry.imports if imp.name]
                       wanted = [name for name in names if 'WaitOnAddress' in name or 'WakeByAddress' in name or 'vertdll' in dll.lower()]
                       lines.append(kind[16:] + ' ' + dll + ' (' + str(len(names)) + ')' + (': ' + ', '.join(wanted[:40]) if wanted else ''))
-              print('::warning title=imports of ' + path.replace(chr(92), '/').split('/')[-1] + '::' + '%0A'.join(lines)[:3900])
+                      if 'vertdll' in dll.lower():
+                          wrong.append(path + ' imports ' + ', '.join(names) + ' from ' + dll)
+              print('::notice title=imports of ' + path.replace(chr(92), '/').split('/')[-1] + '::' + '%0A'.join(lines)[:3900])
+          for line in wrong:
+              print('::error title=vertdll import::' + line)
+          sys.exit(1 if wrong else 0)
           " "$test" target/release/${{ matrix.exe }}
       - name: Size
         if: (success() || failure()) && steps.release.outcome == 'success'

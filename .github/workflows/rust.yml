@@ -188,7 +188,7 @@ jobs:
           name: smoke-${{ runner.os }}
           path: smoke/*.png
       # Which DLL each executable takes WaitOnAddress from; nothing may come from vertdll (the enclave runtime: pcap's
-      # windows-sys 0.36 import library binds WaitOnAddress there, see meter-app/build.rs).
+      # windows-sys 0.36 import library binds WaitOnAddress there, see meter-app/build.rs), nor from the C runtime's DLLs.
       - name: Imports
         if: (success() || failure()) && runner.os == 'Windows'
         run: |
@@ -210,9 +210,12 @@ jobs:
                       lines.append(kind[16:] + ' ' + dll + ' (' + str(len(names)) + ')' + (': ' + ', '.join(wanted[:40]) if wanted else ''))
                       if 'vertdll' in dll.lower():
                           wrong.append(path + ' imports ' + ', '.join(names) + ' from ' + dll)
+                      # The shipped meter links the C runtime in (rust/.cargo/config.toml): none of it may be a DLL to install.
+                      if dll.lower().startswith(('vcruntime', 'msvcp', 'api-ms-win-crt')):
+                          wrong.append(path + ' needs the Visual C++ runtime: ' + dll)
               print('::notice title=imports of ' + path.replace(chr(92), '/').split('/')[-1] + '::' + '%0A'.join(lines)[:3900])
           for line in wrong:
-              print('::error title=vertdll import::' + line)
+              print('::error title=wrong import::' + line)
           sys.exit(1 if wrong else 0)
           " target/release/${{ matrix.exe }}
       - name: Size

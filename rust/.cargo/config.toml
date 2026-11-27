@@ -5,8 +5,12 @@
 # enclave runtime): every executable that links pcap crashed at its first thread park. Each crate also links
 # synchronization.lib, which comes before its dependencies' libraries, and the three symbols are resolved from the start
 # of the link, so they come from it (meter-app's build.rs does the same for builds that set RUSTFLAGS).
+#
+# The C runtime is linked in (crt-static): the meter starts on a Windows without the Visual C++ Redistributable, which a
+# fresh install does not have, instead of failing with "VCRUNTIME140.dll was not found".
 [target.x86_64-pc-windows-msvc]
 rustflags = [
+    "-C", "target-feature=+crt-static",
     "-C", "link-arg=/DELAYLOAD:wpcap.dll", "-C", "link-arg=delayimp.lib",
     "-l", "dylib=synchronization",
     "-C", "link-arg=/INCLUDE:__imp_WaitOnAddress", "-C", "link-arg=/INCLUDE:__imp_WakeByAddressSingle", "-C", "link-arg=/INCLUDE:__imp_WakeByAddressAll",

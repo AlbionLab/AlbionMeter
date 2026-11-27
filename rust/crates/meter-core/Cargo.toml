@@ -1,0 +1,7 @@
+[package]
+name = "meter-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+meter-capture.workspace = true

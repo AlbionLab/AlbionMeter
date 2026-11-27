@@ -1,0 +1,6 @@
+[package]
+name = "meter-app"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

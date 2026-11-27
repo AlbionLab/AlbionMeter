@@ -1,0 +1,6 @@
+[package]
+name = "meter-lab"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

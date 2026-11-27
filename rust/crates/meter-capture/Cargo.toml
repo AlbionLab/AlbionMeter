@@ -1,0 +1,6 @@
+[package]
+name = "meter-capture"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

@@ -6,7 +6,7 @@ use meter_core::cs::Guid;
 use meter_core::dungeon::{DungeonLocation, DungeonRunSnapshot};
 use meter_core::engine::{ItemContribution, PlayerStats, TimelinePoint};
 use meter_core::maps::MapCatalog;
-use meter_core::{CaptureReport, CombatSnapshot, CombatSourceCatalog};
+use meter_core::{CaptureAnalysis, CombatSnapshot, CombatSourceCatalog};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -55,13 +55,14 @@ pub(crate) fn record_status(report_state: Option<&'static str>, paused: bool, ca
 }
 
 impl LiveContext {
-    pub fn of(report: &CaptureReport, replay: bool, capture_running: bool) -> Self {
+    /// Read from the analysis' accessors: none of them grows with the record.
+    pub fn of(analysis: &CaptureAnalysis, replay: bool, capture_running: bool) -> Self {
         Self {
-            character: report.character.as_ref().map(|character| character.character_id),
-            roster_confirmed: report.party.as_ref().is_some_and(|party| party.is_confirmed_since(report.first_timestamp_microseconds)),
-            weapons: report.weapons.iter().flat_map(|weapons| weapons.iter().map(|(id, weapon)| (*id, *weapon))).collect(),
+            character: analysis.character().map(|character| character.character_id),
+            roster_confirmed: analysis.party().is_some_and(|party| party.is_confirmed_since(analysis.first_timestamp())),
+            weapons: analysis.weapons().iter().map(|(id, weapon)| (*id, *weapon)).collect(),
             mode: if replay { "replay" } else { "live" },
-            status: record_status(report.record_state, report.record_paused, capture_running),
+            status: record_status(analysis.reported_record_state(), analysis.record_paused(), capture_running),
         }
     }
 }
@@ -237,7 +238,7 @@ pub(crate) fn status(text: &str) -> feed::RecordStatus {
 }
 
 pub(crate) fn feed_point(point: &TimelinePoint) -> feed::Point {
-    let values = |values: Option<&meter_core::engine::Values>| values.map(|values| values.iter().map(|(key, value)| (key.clone(), *value)).collect()).unwrap_or_default();
+    let values = |values: Option<&meter_core::engine::Values>| values.map(|values| values.iter().collect()).unwrap_or_default();
     feed::Point {
         second: point.second.max(0) as u32,
         damage: values(Some(&point.damage)),

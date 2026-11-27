@@ -157,15 +157,45 @@ fn the_report_serializes_like_the_csharp_capture_report() {
     s.join(new_id());
     s.analysis.start_record(2_000_000).unwrap();
     s.hit(-100.0, 3_000_000);
-    let json = serde_json::to_value(s.analysis.snapshot()).unwrap();
-    let keys: Vec<&str> = json.as_object().unwrap().keys().map(String::as_str).collect();
+    let report = s.analysis.snapshot();
+    let json = serde_json::to_value(&report).unwrap();
+    // C# writes the properties in declaration order; the text says it whatever map order serde_json was built with.
     let expected = [
         "frames", "bytes", "firstTimestampMicroseconds", "lastTimestampMicroseconds", "counters", "flows", "combatDecoded", "character", "party", "combat",
         "combatDiagnostics", "weapons", "contextFrames", "dungeons", "recordPaused", "recordTimestampMicroseconds", "recordState",
     ];
+    let mut keys: Vec<&str> = json.as_object().unwrap().keys().map(String::as_str).collect();
+    keys.sort_unstable();
     let mut sorted = expected.to_vec();
     sorted.sort_unstable();
     assert_eq!(keys, sorted);
+    let text = serde_json::to_string(&report).unwrap();
+    let mut depth = 0;
+    let mut top: Vec<String> = Vec::new();
+    let (mut in_string, mut escaped, mut start) = (false, false, 0);
+    for (i, c) in text.char_indices() {
+        if in_string {
+            match c {
+                _ if escaped => escaped = false,
+                '\\' => escaped = true,
+                '"' => {
+                    in_string = false;
+                    if depth == 1 && text[i + 1..].starts_with(':') {
+                        top.push(text[start..i].to_owned());
+                    }
+                }
+                _ => {}
+            }
+            continue;
+        }
+        match c {
+            '"' => (in_string, start) = (true, i + 1),
+            '{' | '[' => depth += 1,
+            '}' | ']' => depth -= 1,
+            _ => {}
+        }
+    }
+    assert_eq!(top, expected);
     assert_eq!(json["recordState"], "running");
     assert_eq!(json["combat"]["startedAt"], "1970-01-01T00:00:02+00:00");
     assert_eq!(json["combat"]["members"][0]["membership"], "active");

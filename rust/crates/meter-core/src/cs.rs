@@ -16,7 +16,8 @@ pub struct CsMap<K, V, const LINEAR: usize = LINEAR_LIMIT> {
     slots: Vec<Option<(K, V)>>,
     free: Vec<usize>,
     len: usize,
-    index: Option<HashMap<K, usize>>,
+    #[allow(clippy::box_collection)] // boxed: a map without an index (most of them) stays 8 bytes smaller
+    index: Option<Box<HashMap<K, usize>>>,
 }
 
 pub const LINEAR_LIMIT: usize = 16;
@@ -87,7 +88,7 @@ impl<K: Hash + Eq + Clone, V, const LINEAR: usize> CsMap<K, V, LINEAR> {
                 let mut index: HashMap<K, usize> =
                     self.slots.iter().enumerate().filter_map(|(i, s)| s.as_ref().map(|(k, _)| (k.clone(), i))).collect();
                 index.insert(key.clone(), slot);
-                self.index = Some(index);
+                self.index = Some(Box::new(index));
             }
             None => {}
         }
@@ -145,6 +146,11 @@ impl<K: Hash + Eq + Clone, V, const LINEAR: usize> CsMap<K, V, LINEAR> {
         self.free.clear();
         self.len = 0;
         self.index = None;
+    }
+    /// Releases spare capacity, keeping the slot layout (and so the enumeration order).
+    pub fn shrink(&mut self) {
+        self.slots.shrink_to_fit();
+        self.free.shrink_to_fit();
     }
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = (&K, &V)> + Clone {
         self.slots.iter().filter_map(|slot| slot.as_ref().map(|(key, value)| (key, value)))
@@ -411,20 +417,33 @@ impl Serialize for DateTimeOffset {
 /// The slot and source-kind names as `&'static str`: the known ones are matched, any other (a new slot in the game
 /// data) is leaked once, so contributions and events carry them without allocating.
 pub fn intern(text: &str) -> &'static str {
-    const KNOWN: [&str; 16] = [
-        "unknown", "autoAttack", "ability", "passive", "mainhand", "offhand", "head", "chest", "armor", "shoes", "bag", "cape", "mount", "potion", "food", "",
-    ];
-    if let Some(known) = KNOWN.iter().find(|known| **known == text) {
-        return known;
+    interned(intern_code(text))
+}
+
+const KNOWN: [&str; 16] = [
+    "unknown", "autoAttack", "ability", "passive", "mainhand", "offhand", "head", "chest", "armor", "shoes", "bag", "cape", "mount", "potion", "food", "",
+];
+static OTHERS: std::sync::Mutex<Vec<&'static str>> = std::sync::Mutex::new(Vec::new());
+
+/// The one-byte code of an interned name (kept records store names this way).
+pub fn intern_code(text: &str) -> u8 {
+    if let Some(known) = KNOWN.iter().position(|known| *known == text) {
+        return known as u8;
     }
-    static OTHERS: std::sync::Mutex<Vec<&'static str>> = std::sync::Mutex::new(Vec::new());
     let mut others = OTHERS.lock().unwrap();
-    if let Some(other) = others.iter().find(|other| **other == text) {
-        return other;
+    if let Some(other) = others.iter().position(|other| *other == text) {
+        return (KNOWN.len() + other) as u8;
     }
-    let leaked: &'static str = Box::leak(text.to_owned().into_boxed_str());
-    others.push(leaked);
-    leaked
+    assert!(KNOWN.len() + others.len() < 256, "too many slot and kind names");
+    others.push(Box::leak(text.to_owned().into_boxed_str()));
+    (KNOWN.len() + others.len() - 1) as u8
+}
+
+pub fn interned(code: u8) -> &'static str {
+    match KNOWN.get(usize::from(code)) {
+        Some(known) => known,
+        None => OTHERS.lock().unwrap()[usize::from(code) - KNOWN.len()],
+    }
 }
 
 /// `string.Length`: UTF-16 code units.

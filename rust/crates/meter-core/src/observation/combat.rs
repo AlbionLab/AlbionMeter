@@ -125,6 +125,103 @@ struct Pending {
     at: i64,
 }
 
+/// An event counted without an exact source or weapon, kept so later equipment can prove it (`_unsourced`): the
+/// counted event and its effect folded into 48 bytes. Its id is not kept: it is only ever moved within the engine that
+/// counted it, named by `engine`.
+#[derive(Clone, Copy, Debug)]
+struct Unsourced {
+    time: f64,
+    delta: f64,
+    at: i64,
+    spell: i32,
+    kind: i32,
+    weapon: i32,
+    source: i32,
+    engine: u32,
+    /// Bits: spell, kind, weapon, source present.
+    present: u8,
+    slot: u8,
+    source_kind: u8,
+    exact: bool,
+}
+
+fn pack(value: Option<i32>, bit: u8, present: &mut u8) -> i32 {
+    if value.is_some() {
+        *present |= bit;
+    }
+    value.unwrap_or(0)
+}
+
+fn unpack(value: i32, bit: u8, present: u8) -> Option<i32> {
+    (present & bit != 0).then_some(value)
+}
+
+fn placeholder() -> EventId {
+    static PLACEHOLDER: std::sync::OnceLock<EventId> = std::sync::OnceLock::new();
+    PLACEHOLDER.get_or_init(|| EventId::Text("".into())).clone()
+}
+
+impl Unsourced {
+    fn new(counted: &CombatEvent, effect: &Pending, engine: u64) -> Self {
+        let mut present = 0;
+        Unsourced {
+            time: counted.time,
+            delta: effect.delta,
+            at: effect.at,
+            spell: pack(effect.spell, 1, &mut present),
+            kind: pack(effect.kind, 2, &mut present),
+            weapon: pack(counted.weapon_index, 4, &mut present),
+            source: pack(counted.source_item_index, 8, &mut present),
+            engine: engine as u32,
+            present,
+            slot: crate::cs::intern_code(counted.source_slot),
+            source_kind: crate::cs::intern_code(counted.source_kind),
+            exact: counted.source_exact,
+        }
+    }
+    fn effect(&self) -> Pending {
+        Pending {
+            id: placeholder(),
+            time: self.time,
+            delta: self.delta,
+            spell: unpack(self.spell, 1, self.present),
+            kind: unpack(self.kind, 2, self.present),
+            target_kind: "unknown",
+            at: self.at,
+        }
+    }
+    fn counted(&self, actor: Arc<str>) -> CombatEvent {
+        CombatEvent {
+            id: placeholder(),
+            actor_id: actor,
+            time: self.time,
+            metric: if self.delta < 0.0 { CombatMetric::Damage } else { CombatMetric::Healing },
+            amount: self.delta.abs(),
+            weapon_index: self.weapon(),
+            weapon_name: None,
+            source_item_index: self.source(),
+            source_slot: crate::cs::interned(self.slot),
+            source_kind: crate::cs::interned(self.source_kind),
+            source_exact: self.exact,
+        }
+    }
+    fn weapon(&self) -> Option<i32> {
+        unpack(self.weapon, 4, self.present)
+    }
+    fn source(&self) -> Option<i32> {
+        unpack(self.source, 8, self.present)
+    }
+    fn prove(&mut self, proven: &CombatEvent) {
+        let mut present = self.present & 3;
+        self.weapon = pack(proven.weapon_index, 4, &mut present);
+        self.source = pack(proven.source_item_index, 8, &mut present);
+        self.present = present;
+        self.slot = crate::cs::intern_code(proven.source_slot);
+        self.source_kind = crate::cs::intern_code(proven.source_kind);
+        self.exact = proven.source_exact;
+    }
+}
+
 struct Awaiting {
     serial: u64,
     actor: Entity,
@@ -275,7 +372,7 @@ pub struct CapturedCombatObservation {
     party: Option<PartyRosterSnapshot>,
     roster: CsMap<Guid, String>,
     inspections: CsMap<(Connection, Guid), (Vec<i64>, i64)>,
-    unsourced: CsMap<Guid, Vec<(CombatEvent, Pending)>>,
+    unsourced: CsMap<Guid, Vec<Unsourced>>,
     settled: CsMap<Guid, SettledState>,
     gear_history: CsMap<Guid, Vec<Gear>>,
     /// Each character's member id text, formatted once.
@@ -289,6 +386,15 @@ impl CapturedCombatObservation {
 
     fn member_key(&mut self, id: Guid) -> Arc<str> {
         self.member_keys.entry(id).or_insert_with(|| id.to_string().into()).clone()
+    }
+
+    #[doc(hidden)]
+    pub fn debug_sizes(&self) -> String {
+        format!(
+            "unsourced={} unresolved={} awaiting={} kept={} sightings={} timeline={} entities={} characters={} fingerprints={} gear_history={} | {}",
+            self.unsourced.values().map(Vec::len).sum::<usize>(), self.unresolved_count, self.awaiting_roster.len(), self.kept.len(), self.sightings.len(), self.timeline.len(), self.entities.len(), self.characters.len(), self.fingerprints.len(), self.gear_history.values().map(Vec::len).sum::<usize>(),
+            self.engine.as_ref().map_or(String::new(), |e| e.debug_sizes())
+        )
     }
 
     pub fn known_players(&self) -> Vec<KnownPlayer> {
@@ -1370,32 +1476,32 @@ impl CapturedCombatObservation {
         let changed_at = self.entities.iter().filter(|(_, e)| e.id == Some(actor_id)).map(|(k, _)| self.equipment_changes.get(k).copied().unwrap_or(0)).max().unwrap_or(0);
         let start = if local { self.start_gear() } else { None };
         let mut pending = std::mem::take(self.unsourced.get_mut(&actor_id).unwrap());
-        // Entries are borrowed, not cloned: a player can have thousands waiting, and most stay as they are.
+        let serial = self.engine.as_ref().map_or(0, |engine| engine.serial() as u32);
+        let member = self.member_key(actor_id);
         for index in (0..pending.len()).rev() {
-            let current = pending[index].1.at >= changed_at;
+            let entry = pending[index];
+            let effect = entry.effect();
+            let current = entry.at >= changed_at;
             let gear = if current {
                 self.fresh_gear(actor)
             } else {
-                start.as_ref().filter(|(until, _)| pending[index].1.at < *until).map(|(_, before)| before.clone())
+                start.as_ref().filter(|(until, _)| entry.at < *until).map(|(_, before)| before.clone())
             };
             if !current && gear.is_none() {
                 continue;
             }
-            let source = if current { self.source_of_actor(actor, &pending[index].1) } else { self.source_of(Some(actor_id), gear.as_ref(), None, &pending[index].1) };
-            let counted = &pending[index].0;
-            let better = source.index.is_some() && (counted.source_item_index.is_none() || !counted.source_exact && source.exact);
-            let weapon = match counted.weapon_index {
+            let source = if current { self.source_of_actor(actor, &effect) } else { self.source_of(Some(actor_id), gear.as_ref(), None, &effect) };
+            let (counted_source, counted_slot, counted_kind) = (entry.source(), crate::cs::interned(entry.slot), crate::cs::interned(entry.source_kind));
+            let better = source.index.is_some() && (counted_source.is_none() || !entry.exact && source.exact);
+            let weapon = match entry.weapon() {
                 Some(weapon) => Some(weapon),
                 None if current => self.fresh_weapon(actor),
                 None => positive(gear.as_ref().and_then(|g| g[0])),
             };
-            let changed = weapon != counted.weapon_index
-                || better
-                    && (source.index != counted.source_item_index
-                        || source.slot != counted.source_slot
-                        || source.kind != counted.source_kind
-                        || source.exact != counted.source_exact);
+            let changed = weapon != entry.weapon()
+                || better && (source.index != counted_source || source.slot != counted_slot || source.kind != counted_kind || source.exact != entry.exact);
             if changed {
+                let counted = entry.counted(member.clone());
                 let mut proven = counted.clone();
                 proven.weapon_index = weapon;
                 if better {
@@ -1404,13 +1510,14 @@ impl CapturedCombatObservation {
                     proven.source_kind = source.kind;
                     proven.source_exact = source.exact;
                 }
-                if self.engine.as_mut().unwrap().reattribute(&pending[index].0, &proven) {
+                // C# checks the id is in the engine's set: it is exactly when the engine that counted it is current.
+                if entry.engine == serial && self.engine.as_mut().unwrap().reattribute_counted(&counted, &proven) {
                     self.count("reattributedFromTimeline", 1);
-                    pending[index].0 = proven;
+                    pending[index].prove(&proven);
                 }
             }
-            let counted = &pending[index].0;
-            if counted.source_item_index.is_some() && counted.source_exact && counted.weapon_index.is_some() {
+            let entry = &pending[index];
+            if entry.source().is_some() && entry.exact && entry.weapon().is_some() {
                 pending.remove(index);
             }
         }
@@ -1658,7 +1765,7 @@ impl CapturedCombatObservation {
         }
         let at = (timestamp - self.start - self.paused_duration) as f64 / 1_000_000.0;
         if let Some(pending) = self.unsourced.get_mut(&actor_id) {
-            pending.retain(|entry| entry.0.time >= at);
+            pending.retain(|entry| entry.time >= at);
         }
     }
 
@@ -1719,9 +1826,10 @@ impl CapturedCombatObservation {
         if (counted.source_item_index.is_none() || !counted.source_exact || counted.weapon_index.is_none())
             && (self.unsourced.len() < 256 || self.unsourced.contains_key(&actor_id))
         {
+            let entry = Unsourced::new(&counted, &effect, engine.serial());
             let pending = self.unsourced.get_or_insert_with(actor_id, Vec::new);
             if pending.len() < 8192 {
-                pending.push((counted, effect.clone()));
+                pending.push(entry);
             }
         }
         let name = if effect.delta < 0.0 {

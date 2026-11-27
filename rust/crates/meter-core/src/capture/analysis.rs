@@ -17,6 +17,16 @@ use serde::Serialize;
 use std::fmt;
 use std::sync::Arc;
 
+/// The identity side of a report: characters, unidentified players, sightings, skill weapons, timeline.
+#[derive(Clone, Debug, Default)]
+pub struct Identities {
+    pub characters: CsMap<Guid, KnownCharacter>,
+    pub unidentified: Vec<UnidentifiedPlayer>,
+    pub sightings: Vec<IdentitySighting>,
+    pub skill_weapons: CsMap<i32, CsMap<i32, i32>>,
+    pub timeline: Vec<IdentityTimelineEntry>,
+}
+
 /// `CaptureReport`. The fields after `record_timestamp_microseconds` are `[JsonIgnore]` in C# and skipped here too.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,7 +44,7 @@ pub struct CaptureReport {
     pub combat_diagnostics: Option<CsMap<String, i64>>,
     pub weapons: Option<CsMap<Guid, Option<i32>>>,
     pub context_frames: i64,
-    pub dungeons: Option<Vec<DungeonRunSnapshot>>,
+    pub dungeons: Option<Vec<Arc<DungeonRunSnapshot>>>,
     pub record_paused: bool,
     pub record_timestamp_microseconds: Option<i64>,
     #[serde(skip)]
@@ -392,7 +402,28 @@ impl CaptureAnalysis {
         }
     }
 
-    pub fn snapshot(&mut self) -> CaptureReport {
+    #[doc(hidden)]
+    pub fn debug_sizes(&self) -> String {
+        format!("record: {}\ndungeon: {}", self.combat.debug_sizes(), self.dungeons.debug_sizes())
+    }
+
+    pub fn frames(&self) -> i64 {
+        self.frames
+    }
+    pub fn bytes(&self) -> i64 {
+        self.bytes
+    }
+    pub fn first_timestamp(&self) -> Option<i64> {
+        self.first
+    }
+    pub fn last_timestamp(&self) -> Option<i64> {
+        self.last
+    }
+    pub fn party(&self) -> Option<&PartyRosterSnapshot> {
+        self.party.snapshot()
+    }
+    /// The report's `counters`.
+    pub fn counters(&self) -> CsMap<String, i64> {
         let mut counters: CsMap<String, i64> = self.counters.iter().map(|(k, v)| (k.to_string(), *v)).collect();
         for (name, value) in [
             ("duplicateCommands", self.photon.duplicates),
@@ -405,6 +436,48 @@ impl CaptureAnalysis {
         ] {
             counters.insert(name.into(), value);
         }
+        counters
+    }
+    /// The report's `combatDiagnostics`.
+    pub fn combat_diagnostics(&self) -> CsMap<String, i64> {
+        self.combat.diagnostics()
+    }
+    /// The report's `weapons`.
+    pub fn weapons(&self) -> CsMap<Guid, Option<i32>> {
+        self.combat.weapons()
+    }
+    pub fn record_timestamp(&self) -> Option<i64> {
+        self.combat.clock_timestamp()
+    }
+    /// The report's `recordState` (manual recording only).
+    pub fn reported_record_state(&self) -> Option<&'static str> {
+        self.manual_recording.then(|| self.record_state.as_str())
+    }
+    /// The live record, full (the report's `combat`).
+    pub fn combat(&self) -> Option<CombatSnapshot> {
+        self.combat.snapshot()
+    }
+    /// The report's `dungeons`, each run shared until it changes.
+    pub fn dungeons(&mut self) -> Vec<Arc<DungeonRunSnapshot>> {
+        self.dungeons.snapshot_shared()
+    }
+    /// What the meter learned about who is who (the report's `[JsonIgnore]` fields), for the identity store.
+    pub fn identities(&self) -> Identities {
+        let mut unidentified = self.combat.unidentified();
+        unidentified.extend(self.dungeons.unidentified());
+        let mut sightings = self.combat.sightings();
+        sightings.extend(self.dungeons.sightings());
+        Identities {
+            characters: self.combat.characters(),
+            unidentified,
+            sightings,
+            skill_weapons: self.combat.skill_weapons(),
+            timeline: self.combat.timeline(),
+        }
+    }
+
+    /// The whole C# report. It costs the size of the record; a live loop reads the accessors above instead.
+    pub fn snapshot(&mut self) -> CaptureReport {
         let flows = self
             .flows
             .iter()
@@ -418,34 +491,31 @@ impl CaptureAnalysis {
                 )
             })
             .collect();
-        let combat = self.combat.snapshot();
-        let mut unidentified = self.combat.unidentified();
-        unidentified.extend(self.dungeons.unidentified());
-        let mut sightings = self.combat.sightings();
-        sightings.extend(self.dungeons.sightings());
+        let combat = self.combat();
+        let identities = self.identities();
         CaptureReport {
             frames: self.frames,
             bytes: self.bytes,
             first_timestamp_microseconds: self.first,
             last_timestamp_microseconds: self.last,
-            counters,
+            counters: self.counters(),
             flows,
             combat_decoded: combat.is_some(),
             character: self.character.snapshot().cloned(),
             party: self.party.snapshot().cloned(),
             combat,
-            combat_diagnostics: Some(self.combat.diagnostics()),
-            weapons: Some(self.combat.weapons()),
+            combat_diagnostics: Some(self.combat_diagnostics()),
+            weapons: Some(self.weapons()),
             context_frames: self.context_frames,
-            dungeons: Some(self.dungeons.snapshot()),
+            dungeons: Some(self.dungeons()),
             record_paused: self.combat.is_paused(),
-            record_timestamp_microseconds: self.combat.clock_timestamp(),
-            characters: Some(self.combat.characters()),
-            unidentified: Some(unidentified),
-            sightings: Some(sightings),
-            skill_weapons: Some(self.combat.skill_weapons()),
-            timeline: Some(self.combat.timeline()),
-            record_state: self.manual_recording.then(|| self.record_state.as_str()),
+            record_timestamp_microseconds: self.record_timestamp(),
+            characters: Some(identities.characters),
+            unidentified: Some(identities.unidentified),
+            sightings: Some(identities.sightings),
+            skill_weapons: Some(identities.skill_weapons),
+            timeline: Some(identities.timeline),
+            record_state: self.reported_record_state(),
         }
     }
 }

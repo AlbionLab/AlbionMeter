@@ -1,10 +1,10 @@
 # meter-runtime report
 
-Status: the runtime is done and every test passes. Two real-time gates fail in the 10-minute soak at 5× traffic: RAM and packet → engine p99. Both are caused by work that grows with the size of the record (details below).
+Status: the runtime is done and every test passes. Every real-time gate passes in the 12-minute soak, including RAM (63 MB peak at 5×, flat) and packet → engine p99 (0.54 ms), and in the accelerated 2-hour fight (see "Gate numbers").
 
-Commands, run from `rust/` with `CARGO_TARGET_DIR=target/rust-runtime`:
+Commands, run from `rust/` with `CARGO_TARGET_DIR=target/rust-core`:
 - `cargo clippy -p meter-runtime --all-targets -- -D warnings` → exit 0.
-- `cargo test -p meter-runtime` → exit 0: 15 passed, 4 ignored. The ignored ones are the soak, a memory probe and one byte-exact check (see "Cross-crate requests", item 1).
+- `cargo test -p meter-runtime` → exit 0: 16 passed, 3 ignored. The ignored ones are the soak, the memory probe and the accelerated 2-hour fight.
 
 ## C# → Rust
 
@@ -33,7 +33,9 @@ Devices open on a short-lived helper thread (the firewall rule may take seconds)
 
 ### Deliberate differences
 
-- **Report rebuild.** The full `CaptureAnalysis::snapshot()` is rebuilt at most once a second while packets arrive, and right after every command or state change. C# rebuilt it every 200 ms. The UI snapshot itself comes from `combat_delta` on every tick.
+- **Report rebuild.** The status report (counters, diagnostics, character, party, weapons) is read from `CaptureAnalysis`'s accessors at most once a second while packets arrive, and right after every command or state change; none of them grows with the record. C# rebuilt the whole report every 200 ms. The UI snapshot itself comes from `combat_delta` on every tick, the dungeon runs from `CaptureAnalysis::dungeons()` (each run an `Arc`, resolved again only when it changed) and the identities from `identities()` at their 15 s save.
+- **Saves.** Encounters and runs go to the store's typed `save_encounter` / `save_dungeon_run`, straight to their JSON text.
+- **Heap (Linux/glibc).** `Runtime::start` limits glibc to two heap arenas, and the store worker calls `malloc_trim(0)` after each encounter or run save. Without this, freed multi-MB save strings stayed in per-thread arenas: 154 MB RSS at 5× where the live data is about 40 MB.
 - **Dungeon saves.** The 5 s save skips runs that did not change. C# rewrote every run of the capture; the resulting DB is the same.
 - **Seeds.** Known characters, skill weapons and context files are read once at startup. C# read them when it created the live analysis, which happens once.
 - **Not ported.** `PacketDebugStore` (debug-only packet table) and the unused `AppendControl`.
@@ -97,44 +99,81 @@ Not produced: `Update` (meter-app owns it). The account avatar bytes are downloa
 
 ## Gate numbers (release, this machine, 16 cores, load average 3–4 from the other agents)
 
-### Replay latency test
-
-On stress-30min at 60×:
-- packet → engine: p50 0.10 ms, **p99 1.5 ms**, p99.9 13 ms, max 24 ms;
-- packet → publish: **p99 268 ms**;
-- dropped frames: 0.
+"Before" is 76a5033. "After" is this change: meter-core's accessors, bounded record and shared dungeon runs, plus the runtime switched to them, the typed store saves and the heap settings.
 
 ### Soak
 
-Command: `SOAK_MINUTES=12 cargo test -p meter-runtime --release -- --ignored soak --nocapture`. It ran 12 minutes in three phases: 60 s idle with the capture on, 120 s at a real 20-player fight (400 packets/s), then 540 s at 5× (2000 packets/s). It sent 1,127,998 frames and the engine took 1,127,995 (3 still in flight).
+Command: `SOAK_MINUTES=12 cargo test -p meter-runtime --release -- --ignored soak --nocapture`. Phases: 60 s idle, 120 s at 400 packets/s (a real 20-player fight), 540 s at 2000 packets/s (5×). 1,127,996 frames were sent and all were taken.
 
-| Gate | Limit | Measured | Result |
+| Gate | Limit | Before | After |
 |---|---|---|---|
-| Packet → engine p99 | < 2 ms | 14.8 ms over the whole run (p50 0.05 ms, max 86 ms) | FAIL |
-| Packet → publish p99 | < 300 ms | 295 ms (max 336 ms) | pass |
-| Dropped game packets at 5× | 0 | 0 | pass |
-| RAM idle | ≤ 60 MB | 31.7 MB | pass |
-| RAM fight | ≤ 90 MB | 71.6 MB after 2 min at 1×; 330 MB peak after 9 min at 5× | FAIL |
-| CPU idle | < 1 % | 0.23 % | pass |
-| CPU 20-player fight | < 5 % | 3.19 % at 1×, 17.6 % at 5× (traffic generator included) | pass |
+| Packet → engine p99 | < 2 ms | 14.8 ms (max 86 ms) — FAIL | **0.54 ms** (p50 0.06, p99.9 4.0, max 16.7 ms) — pass |
+| Packet → publish p99 | < 300 ms | 295 ms (max 336) — pass | 262 ms (max 263) — pass |
+| Dropped game packets at 5× | 0 | 0 — pass | 0 — pass |
+| RAM idle | ≤ 60 MB | 31.7 MB — pass | 30.9 MB — pass |
+| RAM fight (peak) | ≤ 90 MB | 71.6 MB at 1×; 330 MB at 5× — FAIL | **41.9 MB at 1×; 63.1 MB at 5×**, flat (+0.8 MB over the second half) — pass |
+| CPU idle | < 1 % | 0.23 % — pass | 0.27 % — pass |
+| CPU 20-player fight | < 5 % | 3.19 % at 1× — pass | 4.10 % at 1× (17.9 % at 5×, traffic generator included) — pass |
 
-### Why the two gates fail
+Status-report rebuild on the engine thread: before, p50 grew from 0.8 to 21 ms (p99 61 ms); after, **p50 0.047 ms, p99 0.10 ms, max 0.14 ms**, flat.
 
-Both come from work that grows with the record.
+How the RAM fix was found:
+- With the meter-core changes alone, RSS at 5× was 154 MB.
+- With `MALLOC_ARENA_MAX=2` set outside the process, RSS stayed at 30–60 MB.
+- Setting the arena limit in-process (the test harness has already made arenas) gave 111 MB; adding `malloc_trim` after saves gave 63 MB.
 
-1. **The full report rebuild.** `CaptureAnalysis::snapshot()` runs once a second on the engine thread. Its median grew linearly, from 0.8 ms to 21 ms over the run, with a p99 of 61 ms. Frames wait in the channel meanwhile (none are lost). The runtime needs it only for weapons, roster, character, counters, dungeons and identities.
-2. **RAM grows with the record, even at 1× (≈0.27 MB/s).**
-   - The `memory_probe` test feeds the same traffic straight into one `CaptureAnalysis`: 26 → 70 MB over 230k frames, about 550 bytes per counted event. That part is meter-core's record.
-   - The rest is not measured separately. My reading is that it comes from the resolved copy of the dungeon runs and from the store serializing the growing live run to a `serde_json::Value` every 5 s, which leaves multi-MB transient allocations behind in the allocator.
+### Replay latency test
+
+On stress-30min at 60×:
+
+| | Before | After |
+|---|---|---|
+| Packet → engine p99 | 1.5 ms (max 24 ms) | **0.43 ms** (p99.9 5.6 ms, max 18 ms) |
+| Packet → publish p99 | 268 ms | 253 ms |
+| Dropped frames | 0 | 0 |
+
+### Two hours at 400 packets/s, accelerated
+
+New test: `two_hours_of_fight_stay_within_the_ram_and_tick_gates`, run with `cargo test -p meter-runtime --release --test gates -- --ignored two_hours --nocapture`.
+
+It plays 2,880,000 frames, 7,200 s of game time, into one `CaptureAnalysis` in about 30 s. That reaches the 1,000,000-event and 7,200-bucket caps. On game time it does what the engine does:
+- every 250 ms: the UI delta;
+- every second: the status;
+- every 5 s: the dungeon runs;
+- every 15 s: the identities;
+- every 30 s: the full record.
+
+| | Limit | First version of this change | Final |
+|---|---|---|---|
+| Peak RSS | ≤ 90 MB | 87.4 MB | **66.5 MB** (first hour 54.2, second hour 66.5; it stops growing at the event cap) |
+| Engine tick p99 | < 2 ms | 3.3 ms (the 5 s dungeon snapshot) | **1.58 ms** (p50 0.35 ms; minutes 1–21 p99 1.08 ms, minutes 100–120 p99 1.04 ms) |
+
+`memory_probe` (230k frames at 5×): 26 → 70.9 MB before, 26 → 29.6 MB after.
+
+### What the record kept, and what it keeps now (meter-core)
+
+The C# rules are unchanged, and the output is byte-identical: `diff-replay.sh --synthetic` matches, and so does `the_stress_capture_is_saved_byte_for_byte`, which is no longer ignored.
+
+- **Pending unsourced events** (`_unsourced`, up to 8,192 per player in each of the two engines).
+  - Before: the counted event plus its effect, about 200 B.
+  - Now: 48 B. The id is dropped; C#'s "is the id in the engine's set" check becomes "was it counted by this engine" (engine serial). Slot and kind are stored as 1-byte codes.
+- **Event ids** (C#'s all-time `HashSet<string>`).
+  - Before: about 50 B per event.
+  - Now: an exact set. Each Photon (connection, channel, type, index) keeps a bitmap over command numbers, 2.88M commands in 360 KB. Anything else goes to an ordinary set.
+- **Timeline buckets.**
+  - Damage and healing are dense per-member values sharing one key list per record.
+  - Buckets two seconds old are frozen: weapon and item maps become exact `(key id, value)` slices with ids from a process-wide key table. They are frozen by copy-on-write, because the dungeon checkpoint always shares them.
+  - The live map is boxed.
+- **Dungeon runs.**
+  - `snapshot_shared` returns one `Arc` per run, rebuilt only when the run's record moved.
+  - A total over one encounter is that encounter's points.
+  - Several encounters are merged in one ordered pass, with each encounter's shifted points cached.
 
 ## Cross-crate requests
 
-1. **meter-store `json::format_double`.**
-   - **Bug:** it rounds exact decimal ties up; .NET rounds them to even. Example: 161806.428955078125 is written …813 where C# writes …812. The values are equal, but the bytes differ.
-   - **Fix:** take the digit count N from `{:e}`, then format with `format!("{value:.prec$e}", prec = N - 1)`. Rust's exact formatting rounds half to even, so it gives .NET's digits.
-   - **Test:** `the_stress_capture_is_saved_byte_for_byte` then passes; remove its `#[ignore]`.
-2. **meter-core `CaptureAnalysis`: cheap accessors** for `weapons()`, `party()`, `first_timestamp()` and the counters/diagnostics, so the per-second full `snapshot()` is no longer needed. A dungeon snapshot that is incremental, or returns `Arc` runs/encounters, would also remove the clone and resolve per report. This fixes the packet → engine gate.
-3. **meter-core memory.** Bound what a record keeps per event, about 550 B today (event-id set, pending lists). It is needed for the 90 MB / 2 h gate.
-4. **meter-store.** Accept typed or `Arc` snapshots and serialize straight to a `String`, without going through a `serde_json::Value`. Same `json` formatter.
+1. ~~meter-store `json::format_double`~~ (done in 5a54692).
+2. ~~meter-core cheap accessors and `Arc` dungeon runs~~ (done).
+3. ~~meter-core record memory~~ (done).
+4. ~~meter-store typed saves~~ (done in 5a54692; the runtime now uses them).
 5. **meter-app.** Re-export the runtime's `feed` (above), run `Runtime` as its `MeterFeed`, and keep `InstallUpdate`/`Update` on its own side.
-6. **Workspace.** No Cargo.toml changes outside this crate. Dependencies added to meter-runtime: crossbeam-channel, tokio, reqwest (rustls, for avatars), uuid; dev: sha2. `rust/Cargo.lock` changed accordingly.
+6. **Workspace.** No Cargo.toml changes outside this crate. Dependencies added to meter-runtime: crossbeam-channel, tokio, reqwest (rustls, for avatars), uuid, libc (Linux/glibc only, for the heap settings); dev: sha2. `rust/Cargo.lock` changed accordingly.

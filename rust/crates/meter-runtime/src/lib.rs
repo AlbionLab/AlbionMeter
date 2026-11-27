@@ -139,12 +139,25 @@ impl Drop for Handle {
     }
 }
 
+/// glibc gives every thread that allocates its own heap arena and keeps what was freed in it: the store's multi-MB
+/// save buffers, made on tokio's worker threads, left the process at 150 MB in a soak where the live data is 30 MB.
+/// Two arenas keep the engine thread off the main one and let freed buffers be reused. Process-wide, set before the
+/// runtime starts its threads.
+fn limit_heap_arenas() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    // SAFETY: mallopt only sets an allocator tunable; it is safe to call at any time.
+    unsafe {
+        libc::mallopt(libc::M_ARENA_MAX, 2);
+    }
+}
+
 impl Runtime {
     pub fn new(config: Config) -> Self {
         Self { config }
     }
 
     pub fn start(self, publish: impl Fn(FeedEvent) + Send + Sync + 'static) -> Handle {
+        limit_heap_arenas();
         let (commands, receiver) = std::sync::mpsc::channel();
         let shared = self.shared();
         let thread = std::thread::Builder::new()

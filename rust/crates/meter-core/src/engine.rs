@@ -160,9 +160,100 @@ pub struct ItemContribution {
     pub tier_observed: bool,
 }
 
-/// A bucket's values by member (or contribution) id; ids are shared `Arc<str>`s, so a bucket never copies one, and a
-/// bucket (at most 100 members) is scanned linearly instead of carrying its own hash index.
-pub type Values = CsMap<Arc<str>, f64, 128>;
+pub use crate::values::Values;
+
+/// The ids of the events a record counted, exactly, in a few bits each: Photon numbers a channel's commands in order,
+/// so each (connection, channel, type, index) keeps a bitmap over its command numbers. Anything that does not fit
+/// (unreliable commands, text ids, a far jump) goes to an ordinary set.
+/// (connection, channel, command type, index in the message)
+type RunKey = (Arc<str>, u8, u8, u32);
+
+#[derive(Default)]
+struct EventSet {
+    len: usize,
+    runs: HashMap<RunKey, Bits>,
+    others: HashSet<EventId>,
+}
+
+#[derive(Default)]
+struct Bits {
+    base: u32,
+    words: Vec<u64>,
+}
+
+/// How far a bitmap may stretch to take a number: 2^24 commands, 2 MiB.
+const SPAN: u64 = 1 << 24;
+
+impl Bits {
+    fn locate(&self, number: u32) -> Option<(usize, u64)> {
+        let offset = u64::from(number.checked_sub(self.base)?);
+        Some(((offset / 64) as usize, 1 << (offset % 64)))
+    }
+    fn contains(&self, number: u32) -> bool {
+        self.locate(number).is_some_and(|(word, bit)| self.words.get(word).is_some_and(|w| w & bit != 0))
+    }
+    /// False when the number lies too far from the numbers seen so far.
+    fn insert(&mut self, number: u32) -> bool {
+        if self.words.is_empty() {
+            self.base = number & !63;
+        }
+        if number < self.base {
+            let gap = (self.base - (number & !63)) as u64;
+            if gap + self.words.len() as u64 * 64 > SPAN {
+                return false;
+            }
+            let words = (gap / 64) as usize;
+            self.words.splice(0..0, std::iter::repeat_n(0, words));
+            self.base = number & !63;
+        }
+        let (word, bit) = self.locate(number).unwrap();
+        if word as u64 * 64 >= SPAN {
+            return false;
+        }
+        if word >= self.words.len() {
+            self.words.resize(word + 1, 0);
+        }
+        self.words[word] |= bit;
+        true
+    }
+}
+
+impl EventSet {
+    fn run_key(id: &EventId) -> Option<(RunKey, u32)> {
+        match id {
+            EventId::Command { connection, channel, kind, number, extra: None, index } => Some(((connection.clone(), *channel, *kind, *index), *number)),
+            _ => None,
+        }
+    }
+    fn contains(&self, id: &EventId) -> bool {
+        if let Some((key, number)) = Self::run_key(id)
+            && self.runs.get(&key).is_some_and(|bits| bits.contains(number))
+        {
+            return true;
+        }
+        self.others.contains(id)
+    }
+    /// `HashSet.Add`: false when the id was counted already.
+    fn insert(&mut self, id: &EventId) -> bool {
+        if self.contains(id) {
+            return false;
+        }
+        let stored = match Self::run_key(id) {
+            Some((key, number)) => self.runs.entry(key).or_default().insert(number),
+            None => false,
+        };
+        if !stored {
+            self.others.insert(id.clone());
+        }
+        self.len += 1;
+        true
+    }
+    fn len(&self) -> usize {
+        self.len
+    }
+}
+
+static SERIALS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 #[derive(Clone, PartialEq, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -280,7 +371,7 @@ struct Recent {
 
 pub struct CombatEngine {
     members: Vec<PartyMember>,
-    member_keys: Vec<Arc<str>>,
+    member_keys: crate::values::Keys,
     membership: CsMap<String, Vec<(f64, Option<f64>)>>,
     damage: CsMap<String, f64>,
     healing: CsMap<String, f64>,
@@ -293,7 +384,8 @@ pub struct CombatEngine {
     contribution_revisions: HashMap<Arc<str>, i64>,
     removed: std::collections::VecDeque<(i64, Arc<str>)>,
     removed_horizon: i64,
-    event_ids: HashSet<EventId>,
+    event_ids: EventSet,
+    serial: u64,
     recent: Vec<Recent>,
     recent_floor: f64,
     dirty: BTreeSet<i32>,
@@ -305,9 +397,9 @@ pub struct CombatEngine {
 }
 
 fn shift(values: &mut Values, key: &Arc<str>, amount: f64) {
-    let value = values.get(&**key).copied().unwrap_or(0.0) + amount;
+    let value = values.get(key).copied().unwrap_or(0.0) + amount;
     if value.abs() < 1e-6 {
-        values.remove(&**key);
+        values.remove(key);
     } else {
         values.insert(key.clone(), value);
     }
@@ -328,7 +420,7 @@ impl CombatEngine {
             damage: members.iter().map(|m| (m.id.clone(), 0.0)).collect(),
             healing: members.iter().map(|m| (m.id.clone(), 0.0)).collect(),
             membership: members.iter().map(|m| (m.id.clone(), vec![(0.0, None)])).collect(),
-            member_keys: members.iter().map(|m| Arc::from(m.id.as_str())).collect(),
+            member_keys: Arc::new(members.iter().map(|m| Arc::from(m.id.as_str())).collect()),
             members,
             timeline: BTreeMap::new(),
             weapons: CsMap::new(),
@@ -338,7 +430,8 @@ impl CombatEngine {
             contribution_revisions: HashMap::new(),
             removed: std::collections::VecDeque::new(),
             removed_horizon: -1,
-            event_ids: HashSet::new(),
+            event_ids: EventSet::default(),
+            serial: SERIALS.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             recent: Vec::new(),
             recent_floor: f64::INFINITY,
             dirty: BTreeSet::new(),
@@ -374,6 +467,18 @@ impl CombatEngine {
     }
     pub fn event_count(&self) -> usize {
         self.event_ids.len()
+    }
+    #[doc(hidden)]
+    pub fn debug_sizes(&self) -> String {
+        format!(
+            "events={} runs={} bits={} others={} recent={} buckets={} weapons={} items={} keys={} member_rev={} contrib_rev={} removed={}",
+            self.event_ids.len, self.event_ids.runs.len(), self.event_ids.runs.values().map(|b| b.words.capacity()).sum::<usize>(), self.event_ids.others.len(),
+            self.recent.capacity(), self.timeline.len(), self.weapons.len(), self.items.len(), self.keys.len(), self.member_revisions.len(), self.contribution_revisions.len(), self.removed.len()
+        )
+    }
+    /// Unique per engine instance, for callers that keep events of "this" record.
+    pub fn serial(&self) -> u64 {
+        self.serial
     }
 
     pub fn knows(&self, actor: &str) -> bool {
@@ -480,16 +585,16 @@ impl CombatEngine {
         self.membership.insert(member.id.clone(), vec![(self.elapsed, None)]);
         let sequence = self.sequence + 1;
         let key: Arc<str> = member.id.as_str().into();
+        Arc::make_mut(&mut self.member_keys).push(key);
         for (second, (point, revision)) in self.timeline.iter_mut() {
             let point = Arc::make_mut(point);
-            point.damage.insert_new(key.clone(), 0.0);
-            point.healing.insert_new(key.clone(), 0.0);
+            point.damage.push_member(&self.member_keys, 0.0);
+            point.healing.push_member(&self.member_keys, 0.0);
             *revision = sequence;
             self.dirty.insert(*second);
         }
         let id = member.id.clone();
         self.members.push(member);
-        self.member_keys.push(key);
         self.sequence += 1;
         self.touch_member(&id);
         Ok(())
@@ -536,7 +641,7 @@ impl CombatEngine {
         if !(current + event.amount).is_finite() || self.event_ids.contains(&event.id) {
             return false;
         }
-        self.event_ids.insert(event.id.clone());
+        self.event_ids.insert(&event.id);
         let second = event.time.floor() as i32;
         self.ensure_second(second);
         let totals = match event.metric {
@@ -550,7 +655,7 @@ impl CombatEngine {
                 CombatMetric::Damage => &mut point.damage,
                 CombatMetric::Healing => &mut point.healing,
             };
-            *values.get_mut(&*event.actor_id).unwrap() += event.amount;
+            *values.get_mut(&event.actor_id).unwrap() += event.amount;
         }
         self.credit(event, second, 1.0);
         if event.time >= self.elapsed - 10.0 {
@@ -565,12 +670,18 @@ impl CombatEngine {
     }
 
     pub fn reattribute(&mut self, counted: &CombatEvent, proven: &CombatEvent) -> bool {
-        if counted.id != proven.id
-            || counted.actor_id != proven.actor_id
+        if counted.id != proven.id || !self.event_ids.contains(&counted.id) {
+            return false;
+        }
+        self.reattribute_counted(counted, proven)
+    }
+
+    /// `reattribute` for an event the caller knows this engine (by [`Self::serial`]) counted, so its id is not kept.
+    pub fn reattribute_counted(&mut self, counted: &CombatEvent, proven: &CombatEvent) -> bool {
+        if counted.actor_id != proven.actor_id
             || counted.metric != proven.metric
             || counted.amount != proven.amount
             || counted.time != proven.time
-            || !self.event_ids.contains(&counted.id)
             || !self.damage.contains_key(&*counted.actor_id)
         {
             return false;
@@ -873,9 +984,47 @@ impl CombatEngine {
             return;
         }
         let mut point = TimelinePoint::empty(second);
-        point.damage = self.member_keys.iter().map(|k| (k.clone(), 0.0)).collect();
-        point.healing = self.member_keys.iter().map(|k| (k.clone(), 0.0)).collect();
+        point.damage = Values::members(&self.member_keys);
+        point.healing = Values::members(&self.member_keys);
         self.timeline.insert(second, (Arc::new(point), self.sequence + 1));
         self.dirty.insert(second);
+        // Two seconds back the bucket is very unlikely to grow again: freeze it. A snapshot that shares it (a dungeon
+        // checkpoint always does) keeps the old copy until its next checkpoint.
+        if let Some((point, _)) = self.timeline.get_mut(&(second - 2)) {
+            let point = Arc::make_mut(point);
+            for values in [&mut point.damage, &mut point.healing].into_iter().chain([&mut point.weapon_damage, &mut point.weapon_healing, &mut point.item_damage, &mut point.item_healing].into_iter().flatten()) {
+                values.shrink();
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{EventId, EventSet, SPAN};
+    use std::sync::Arc;
+
+    fn command(connection: &Arc<str>, number: u32, extra: Option<u32>, index: u32) -> EventId {
+        EventId::Command { connection: connection.clone(), channel: 0, kind: 6, number, extra, index }
+    }
+
+    /// The bitmap set answers exactly like a `HashSet` of the ids, out of order, backwards and across a far jump.
+    #[test]
+    fn the_event_set_is_exact() {
+        let (a, b): (Arc<str>, Arc<str>) = ("server:0:1".into(), "server:0:2".into());
+        let mut set = EventSet::default();
+        let mut reference = std::collections::HashSet::new();
+        let numbers = [500u32, 501, 499, 10, 70_000, 64, 63, 500, 2_000_000_000, 7, (SPAN as u32) * 3, 0, 1_000_000];
+        for (n, &number) in numbers.iter().enumerate() {
+            for id in [command(&a, number, None, 0), command(&a, number, None, n as u32 % 3), command(&b, number, Some(9), 0), EventId::Text(format!("t{number}").into())] {
+                assert_eq!(set.insert(&id), reference.insert(id.clone()), "{id}");
+            }
+        }
+        assert_eq!(set.len(), reference.len());
+        for number in 0..600 {
+            for id in [command(&a, number, None, 0), command(&b, number, None, 0), command(&a, number, None, 1)] {
+                assert_eq!(set.contains(&id), reference.contains(&id), "{id}");
+            }
+        }
     }
 }

@@ -3006,6 +3006,7 @@ name = "meter-runtime"
 version = "0.2.0"
 dependencies = [
  "crossbeam-channel",
+ "libc",
  "meter-capture",
  "meter-core",
  "meter-lab",

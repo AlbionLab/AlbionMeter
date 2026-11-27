@@ -61,6 +61,16 @@ pub(crate) enum StoreJob {
     Barrier(tokio::sync::oneshot::Sender<()>),
 }
 
+/// A save serializes a whole record to one multi-MB string; glibc keeps such freed blocks in the thread's arena, so the
+/// store hands them back after each save (on its own thread, off the engine's).
+fn release_freed_memory() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    // SAFETY: malloc_trim only returns free heap pages to the system.
+    unsafe {
+        libc::malloc_trim(0);
+    }
+}
+
 fn uuid(id: &Guid) -> Uuid {
     Uuid::parse_str(&id.to_string()).unwrap_or_default()
 }
@@ -108,8 +118,29 @@ impl StoreWorker {
             }
         };
         match job {
-            StoreJob::SaveEncounter(snapshot, allow_empty) => report("Failed to save the encounter", self.store.save(&*snapshot, allow_empty)),
-            StoreJob::SaveDungeon(run) => report("Failed to save the dungeon run", self.store.save_dungeon(&*run, true)),
+            StoreJob::SaveEncounter(snapshot, allow_empty) => {
+                // `snapshot with { Status = "completed", Full = true }`, written straight to its JSON text.
+                let mut snapshot = *snapshot;
+                snapshot.status = "completed".into();
+                snapshot.full = true;
+                let summary = meter_store::EncounterSummary {
+                    id: snapshot.id.clone(),
+                    started_at: meter_store::DateTimeOffset::from_unix_milliseconds(snapshot.started_at.unix_milliseconds()),
+                    duration: snapshot.elapsed_seconds,
+                    damage: snapshot.total_damage,
+                    healing: snapshot.total_healing,
+                    members: (snapshot.members.len() + snapshot.former_members.as_ref().map_or(0, Vec::len)) as i32,
+                    mode: snapshot.mode.clone(),
+                    location: snapshot.location.as_ref().and_then(|location| serde_json::to_value(location).ok()),
+                };
+                report("Failed to save the encounter", self.store.save_encounter(&snapshot, &summary, snapshot.event_count, allow_empty));
+                release_freed_memory();
+            }
+            StoreJob::SaveDungeon(run) => {
+                let summary = crate::resolve::dungeon_summary(&run);
+                report("Failed to save the dungeon run", self.store.save_dungeon_run(&*run, &summary, run.totals.event_count, true));
+                release_freed_memory();
+            }
             StoreJob::Identities(identities) => {
                 // Identity evidence that cannot be written is learned again from the next save.
                 let _ = self.identities(&identities);

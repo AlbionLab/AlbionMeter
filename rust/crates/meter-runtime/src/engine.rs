@@ -18,7 +18,8 @@ use meter_core::cs::DateTimeOffset;
 use meter_core::dungeon::DungeonRunSnapshot;
 use meter_core::maps::MapCatalog;
 use meter_core::observation::local::LocalCharacterSnapshot;
-use meter_core::{CaptureAnalysis, CaptureReport, CombatEngine, RecordState};
+use meter_core::cs::CsMap;
+use meter_core::{CaptureAnalysis, CombatEngine, RecordState};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -150,8 +151,9 @@ pub(crate) struct Engine {
     saved_dungeon_encounters: HashMap<String, i64>,
     saved_runs: HashMap<String, (String, usize, i64, i64, [u64; 3])>,
     last_identity_save: Option<Instant>,
-    // The latest `CaptureAnalysis::snapshot()` of the current analysis, as the C# status carried it.
-    report: Option<CaptureReport>,
+    // What the status line and the saves read from the current analysis, as the C# status report carried it; read
+    // through the analysis' accessors so it costs the same whatever the length of the record.
+    report: Option<Report>,
     report_serial: u64,
     context: LiveContext,
     dirty: bool,
@@ -164,8 +166,20 @@ pub(crate) struct Engine {
     open_dungeon: Option<String>,
     open_published: u64,
     resolved: Option<((u64, bool), Runs)>,
+    /// Each live run as the analysis last shared it and resolved: a run the analysis hands back unchanged (the same
+    /// `Arc`) is not resolved again.
+    resolved_runs: HashMap<String, (Arc<DungeonRunSnapshot>, bool, Arc<DungeonRunSnapshot>)>,
     last_dungeons: Option<Instant>,
     lab_sequence: i64,
+}
+
+/// The light part of the C# status report.
+struct Report {
+    frames: i64,
+    bytes: i64,
+    counters: CsMap<String, i64>,
+    diagnostics: CsMap<String, i64>,
+    character: Option<LocalCharacterSnapshot>,
 }
 
 fn wall_us() -> i64 {
@@ -229,6 +243,7 @@ impl Engine {
             open_dungeon: None,
             open_published: 0,
             resolved: None,
+            resolved_runs: HashMap::new(),
             last_dungeons: None,
             lab_sequence: -1,
         }
@@ -785,8 +800,15 @@ impl Engine {
             return;
         };
         let started = Instant::now();
-        let report = analysis.snapshot();
-        self.context = LiveContext::of(&report, replay, running);
+        let report = Report {
+            frames: analysis.frames(),
+            bytes: analysis.bytes(),
+            counters: analysis.counters(),
+            diagnostics: analysis.combat_diagnostics(),
+            character: analysis.character().cloned(),
+        };
+        let party = analysis.party().cloned();
+        self.context = LiveContext::of(analysis, replay, running);
         if self.status.source == Source::Live {
             if let Some(character) = &report.character
                 && self.last_character.as_ref() != Some(character)
@@ -796,7 +818,7 @@ impl Engine {
                     self.job(StoreJob::Character(value));
                 }
             }
-            if let Some(party) = &report.party
+            if let Some(party) = &party
                 && self.last_party.is_none_or(|observed| party.observed_at_microseconds > observed)
             {
                 self.last_party = Some(party.observed_at_microseconds);
@@ -834,14 +856,24 @@ impl Engine {
         {
             return runs.clone();
         }
-        // The report's own runs are moved out once resolved, so only one copy is kept. A later change of the capture
-        // state within the same report (a stop) resolves the resolved runs again, which only marks running runs paused.
-        let runs = match (self.report.as_mut().and_then(|report| report.dungeons.take()), &self.resolved) {
-            (Some(runs), _) => runs,
-            (None, Some((_, resolved))) => resolved.iter().map(|run| (**run).clone()).collect(),
-            (None, None) => vec![],
-        };
-        let runs: Runs = Arc::new(self.names.resolve_dungeons(runs, key.1).into_iter().map(Arc::new).collect());
+        // Only the runs that changed since they were last resolved (the running one) are copied and resolved again.
+        let Some(analysis) = self.current() else { return Arc::default() };
+        let shared = analysis.dungeons();
+        let mut resolved = Vec::with_capacity(shared.len());
+        for run in shared {
+            let reuse = self.resolved_runs.get(&run.id).filter(|(raw, running, _)| Arc::ptr_eq(raw, &run) && *running == key.1).map(|entry| entry.2.clone());
+            let done = match reuse {
+                Some(done) => done,
+                None => {
+                    let done = Arc::new(self.names.resolve_dungeons(vec![(*run).clone()], key.1).remove(0));
+                    self.resolved_runs.insert(run.id.clone(), (run, key.1, done.clone()));
+                    done
+                }
+            };
+            resolved.push(done);
+        }
+        self.resolved_runs.retain(|id, _| resolved.iter().any(|run| run.id == *id));
+        let runs: Runs = Arc::new(resolved);
         self.resolved = Some((key, runs.clone()));
         runs
     }
@@ -888,15 +920,18 @@ impl Engine {
             return;
         }
         let debug = self.config.debug;
-        let Some(report) = &mut self.report else { return };
-        let Some(characters) = report.characters.take() else { return };
+        if self.report.is_none() {
+            return;
+        }
+        let Some(analysis) = self.current() else { return };
+        let found = analysis.identities();
         self.last_identity_save = Some(Instant::now());
         let identities = Identities {
-            characters,
-            unidentified: report.unidentified.take().unwrap_or_default(),
-            sightings: report.sightings.take().unwrap_or_default(),
-            skills: report.skill_weapons.take(),
-            timeline: report.timeline.take().filter(|_| debug),
+            characters: found.characters,
+            unidentified: found.unidentified,
+            sightings: found.sightings,
+            skills: Some(found.skill_weapons),
+            timeline: debug.then_some(found.timeline),
         };
         self.job(StoreJob::Identities(Box::new(identities)));
     }
@@ -971,7 +1006,7 @@ impl Engine {
     fn publish_status(&self) {
         let status = &self.status;
         let report = self.report.as_ref().filter(|_| status.has_report).map(|report| {
-            let diagnostics = report.combat_diagnostics.iter().flat_map(|values| values.iter());
+            let diagnostics = report.diagnostics.iter();
             let mut counters: Vec<(Arc<str>, f64)> = report.counters.iter().map(|(key, value)| (Arc::from(key.as_str()), *value as f64)).collect();
             for (key, value) in diagnostics.clone() {
                 match counters.iter_mut().find(|(name, _)| **name == **key) {

@@ -165,11 +165,9 @@ fn the_ui_timeline_built_from_deltas_equals_the_saved_one() {
     assert!(fulls <= 3, "{fulls} full snapshots of {snapshots}");
 }
 
-/// Byte for byte, the stress capture differs from the C# file in 518 numbers: doubles whose shortest form ends on an
-/// exact decimal tie (161806.428955078125), which .NET rounds to even (…812) and `meter_store::json::format_double`
-/// rounds up (…813). The values are equal (the test above); this one passes once meter-store rounds ties to even.
+/// Byte for byte, the stress capture is the C# file too: doubles whose shortest form ends on an exact decimal tie
+/// (161806.428955078125) are rounded to even (…812), as .NET does.
 #[test]
-#[ignore = "meter-store format_double rounds 17-digit ties up; .NET rounds them to even"]
 fn the_stress_capture_is_saved_byte_for_byte() {
     let (saved, _) = replay("stress-bytes", &scenarios::stress(30));
     let expected = include_str!("fixtures/csharp-replay-stress-30min.text.sha256").trim();

@@ -17,10 +17,11 @@ pub mod importer;
 pub mod maps;
 pub mod observation;
 pub mod record_controls;
+pub mod values;
 #[doc(hidden)]
 pub mod testkit;
 
-pub use capture::analysis::{CaptureAnalysis, CaptureReport, RecordError, RecordState};
+pub use capture::analysis::{CaptureAnalysis, CaptureReport, Identities, RecordError, RecordState};
 pub use catalog::CombatSourceCatalog;
 pub use engine::{CombatChanges, CombatDelta, CombatEngine, CombatSnapshot};
 pub use meter_capture::CaptureFrame;

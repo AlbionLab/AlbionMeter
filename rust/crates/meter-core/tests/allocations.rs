@@ -131,7 +131,8 @@ fn the_decode_path_allocates_nothing_per_packet_in_steady_state() {
 }
 
 /// In a fight the record keeps what it counts: event ids for dedup, one timeline bucket per second and each
-/// contribution's first entry in a bucket. Those amortize to a few hundredths of an allocation per hit.
+/// contribution's first entry in a bucket, and the freezing of buckets two seconds old. They follow the record's
+/// seconds, not its hits: the bound is a few per elapsed second plus a few hundredths per hit.
 #[test]
 fn combat_packets_allocate_only_what_the_record_keeps() {
     combat_allocations(None);
@@ -166,6 +167,7 @@ fn combat_allocations(sources: Option<std::sync::Arc<meter_core::CombatSourceCat
         }
     });
     let per_packet = count as f64 / measured.len() as f64;
-    println!("combat: {count} allocations for {} hits ({per_packet:.3} per hit)", measured.len());
-    assert!(per_packet <= 0.1, "{per_packet} allocations per hit");
+    let seconds = (measured.last().unwrap().timestamp_us - measured[0].timestamp_us) as f64 / 1e6 + 1.0;
+    println!("combat: {count} allocations for {} hits over {seconds:.1} record seconds ({per_packet:.3} per hit)", measured.len());
+    assert!(count as f64 <= 0.02 * measured.len() as f64 + 40.0 * seconds, "{count} allocations");
 }

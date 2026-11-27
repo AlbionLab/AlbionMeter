@@ -404,10 +404,22 @@ impl DungeonCombatObservation {
         self.combat.set_party(party);
     }
 
+    #[doc(hidden)]
+    pub fn debug_sizes(&self) -> String {
+        format!("runs={} arrivals={} combat: {}", self.runs.len(), self.arrivals.len(), self.combat.debug_sizes())
+    }
+
     pub fn snapshot(&mut self) -> Vec<DungeonRunSnapshot> {
+        self.snapshot_shared().into_iter().map(|run| (*run).clone()).collect()
+    }
+
+    /// The runs, each shared until it changes: a finished run is the same `Arc` every time, and the running one is
+    /// rebuilt only when its record moved.
+    pub fn snapshot_shared(&mut self) -> Vec<Arc<DungeonRunSnapshot>> {
         let at = self.bounded(self.latest_timestamp);
         self.checkpoint(at, if self.paused { "paused" } else { "running" });
         let status = if self.paused { "paused" } else { "running" };
-        self.runs.iter().map(|r| r.run.snapshot(if Some(r.serial) == self.active { status } else { "completed" })).collect()
+        let active = self.active;
+        self.runs.iter_mut().map(|r| r.run.snapshot_shared(if Some(r.serial) == active { status } else { "completed" })).collect()
     }
 }

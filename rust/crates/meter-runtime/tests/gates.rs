@@ -10,9 +10,13 @@ mod common;
 
 use common::*;
 use meter_capture::{AdapterStatistics, CaptureError, CaptureFrame, FrameSource, Read};
+#[cfg(target_os = "linux")]
 use meter_core::capture::protocol18::Value;
+#[cfg(target_os = "linux")]
 use meter_core::cs::Guid;
-use meter_core::testkit::{message_frame, msg, put32, scenarios};
+#[cfg(target_os = "linux")]
+use meter_core::testkit::{message_frame, msg};
+use meter_core::testkit::{put32, scenarios};
 use meter_runtime::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -95,12 +99,14 @@ impl FrameSource for Paced {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn id(n: u8) -> Guid {
     Guid([n, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, n])
 }
 
 /// A 20-player party fighting: the local player joins a dungeon floor, the roster and the others are announced, then
 /// hits on mobs, heals on players and other game traffic (moves) in a 35/10/55 mix.
+#[cfg(target_os = "linux")]
 fn raid() -> (Vec<CaptureFrame>, Vec<CaptureFrame>) {
     let ids: Vec<Guid> = (1..=20).map(id).collect();
     let names: Vec<String> = (1..=20).map(|n| format!("Player{n:02}")).collect();
@@ -320,4 +326,100 @@ fn memory_probe_analysis_alone() {
         }
     }
     println!("frames={frames} rss={:.1} MB", process::rss_mb());
+}
+
+/// Two hours of a 20-player fight (400 packets/s of game time, the record's 7 200 s cap) replayed as fast as the
+/// machine goes into one analysis, with what the engine thread does on game time: every 250 ms tick the UI delta and
+/// the status accessors, every 5 s the dungeon runs, every 15 s the identities, every 30 s the full record for the
+/// save. Asserts the peak RSS and the per-tick engine time, and that neither grows with the record.
+///
+/// `cargo test -p meter-runtime --release --test gates -- --ignored two_hours --nocapture`
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "accelerated 2-hour fight"]
+fn two_hours_of_fight_stay_within_the_ram_and_tick_gates() {
+    let (setup, templates) = raid();
+    let sources = meter_core::CombatSourceCatalog::load(repo_assets().join("combat.json")).map(Arc::new);
+    let mut analysis = meter_core::CaptureAnalysis::new(sources, true);
+    let start = 1_700_000_000_000_000i64;
+    analysis.begin_capture(Some(start), false, false);
+    let mut source = Paced { setup, templates, rate: Arc::new(AtomicU64::new(1e12f64.to_bits())), current: 0.0, started: None, emitted: Arc::default(), sent: 0, sequence: 0, random: 0x9e37_79b9_7f4a_7c15, once: false, next: 0 };
+    let mut frame = CaptureFrame::default();
+    let (step, seconds) = (2_500i64, 7_200i64);
+    let frames = seconds * 1_000_000 / step;
+    let (mut since, mut ticks, mut peak, mut samples) = (-1i64, Vec::<(i64, u64)>::new(), 0f64, Vec::<(i64, f64)>::new());
+    let begun = Instant::now();
+    let mut parts = [0u64; 5];
+    for n in 0..frames {
+        source.read(&mut frame).unwrap();
+        frame.timestamp_us = start + 1_000 + n * step;
+        analysis.add(&frame);
+        if n == 30 {
+            analysis.start_record(frame.timestamp_us).unwrap();
+        }
+        let at = n * step;
+        if n > 30 && at % 250_000 == 0 {
+            let started = Instant::now();
+            analysis.advance_clock(frame.timestamp_us);
+            let mut lap = |part: usize, since: Instant| parts[part] = parts[part].max(since.elapsed().as_micros() as u64);
+            let t = Instant::now();
+            if let Some(delta) = analysis.combat_delta(since) {
+                since = delta.sequence;
+            }
+            lap(0, t);
+            let t = Instant::now();
+            if at % 1_000_000 == 0 {
+                std::hint::black_box((analysis.counters(), analysis.combat_diagnostics(), analysis.weapons(), analysis.party().cloned(), analysis.character().cloned()));
+            }
+            lap(1, t);
+            let t = Instant::now();
+            if at % 5_000_000 == 0 {
+                std::hint::black_box(analysis.dungeons());
+            }
+            lap(2, t);
+            let t = Instant::now();
+            if at % 15_000_000 == 0 {
+                std::hint::black_box(analysis.identities());
+            }
+            lap(3, t);
+            let t = Instant::now();
+            if at % 30_000_000 == 0 {
+                std::hint::black_box(analysis.combat_delta(-1));
+            }
+            lap(4, t);
+            ticks.push((at / 1_000_000, started.elapsed().as_micros() as u64));
+        }
+        if at % 60_000_000 == 0 {
+            let rss = process::rss_mb();
+            peak = peak.max(rss);
+            samples.push((at / 1_000_000, rss));
+            if at % 600_000_000 == 0 {
+                println!("game t={:>5}s rss={rss:>5.1} MB wall={:.1}s; slowest delta/status/dungeons/identities/full {parts:?} µs", at / 1_000_000, begun.elapsed().as_secs_f64());
+                parts = [0; 5];
+                if std::env::var("SIZES").is_ok() {
+                    println!("{}", analysis.debug_sizes());
+                }
+            }
+        }
+    }
+    let percentile = |range: std::ops::Range<i64>, q: f64| {
+        let mut values: Vec<u64> = ticks.iter().filter(|(second, _)| range.contains(second)).map(|(_, us)| *us).collect();
+        values.sort_unstable();
+        values[((values.len() - 1) as f64 * q) as usize]
+    };
+    let all = 0..i64::MAX;
+    let (p50, p99, max) = (percentile(all.clone(), 0.5), percentile(all.clone(), 0.99), percentile(all, 1.0));
+    let (early, late) = (percentile(60..1_260, 0.99), percentile(6_000..7_200, 0.99));
+    let last_half = samples.iter().filter(|(second, _)| *second >= 3_600).map(|(_, rss)| *rss).fold(0.0, f64::max);
+    let first_half = samples.iter().filter(|(second, _)| *second < 3_600).map(|(_, rss)| *rss).fold(0.0, f64::max);
+    let combat = analysis.combat().unwrap();
+    println!("{frames} frames, {} events, {} buckets in {:.1}s", combat.event_count, combat.timeline.len(), begun.elapsed().as_secs_f64());
+    table(&[
+        ("RAM, 2 h fight (peak)", "≤ 90 MB", format!("{peak:.1} MB (first hour {first_half:.1}, second hour {last_half:.1})"), peak <= 90.0),
+        ("Engine tick p99", "< 2 ms", format!("{} (p50 {}, max {}; minutes 1–21 p99 {}, minutes 100–120 p99 {})", ms(p99), ms(p50), ms(max), ms(early), ms(late)), p99 < 2_000),
+    ]);
+    if TIMED {
+        assert!(peak <= 90.0, "peak RSS {peak:.1} MB");
+        assert!(p99 < 2_000, "tick p99 {p99} µs");
+    }
 }

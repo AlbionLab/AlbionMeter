@@ -3,7 +3,7 @@
 use crate::cs::{CsMap, DateTimeOffset, Guid};
 use crate::engine::{CombatSnapshot, ItemContribution, PlayerStats, TimelinePoint, Values, WeaponContribution};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
@@ -89,7 +89,15 @@ pub struct DungeonRun {
     current: Option<usize>,
     id: String,
     started_at: DateTimeOffset,
+    /// Moves whenever a snapshot would change; [`DungeonRun::snapshot_shared`] reuses its last result until then.
+    version: u64,
+    cached: Option<(u64, String, Arc<DungeonRunSnapshot>)>,
+    shifts: Shifts,
 }
+
+/// The timeline points of an encounter moved to its place in a total (`floor(offset + second)`), by scope (floor or
+/// run) and encounter id, kept while the encounter and its offset stay the same.
+type Shifts = HashMap<(bool, String), (i64, u64, Vec<Arc<TimelinePoint>>)>;
 
 impl DungeonRun {
     pub fn new(name: &str, entrance_map_id: &str, entrance_map_name: &str, mode: &str, id: Option<String>, started_at: Option<DateTimeOffset>) -> Self {
@@ -103,6 +111,9 @@ impl DungeonRun {
             current: None,
             id: id.unwrap_or_else(|| Guid::new_v4().simple()),
             started_at: started_at.unwrap_or_else(DateTimeOffset::now),
+            version: 0,
+            cached: None,
+            shifts: HashMap::new(),
         }
     }
 
@@ -128,6 +139,7 @@ impl DungeonRun {
                     map_name: map_name.into(),
                     encounters: CsMap::new(),
                 });
+                self.version += 1;
                 self.floors.len() - 1
             }
         };
@@ -163,26 +175,53 @@ impl DungeonRun {
         if self.floors[index].encounters.get(&encounter.id).is_some_and(|previous| previous.sequence > encounter.sequence) {
             return Ok(());
         }
+        // The same record at the same sequence and status is the same snapshot: storing it again changes nothing.
+        if self.floors[index].encounters.get(&encounter.id).is_some_and(|previous| {
+            previous.sequence == encounter.sequence && previous.status == encounter.status && previous.location == encounter.location && previous.started_at == encounter.started_at
+        }) {
+            return Ok(());
+        }
         if self.encounter_floors.len() >= 1000 && !self.encounter_floors.contains_key(&encounter.id) {
             return Err(DungeonError::EncounterLimit);
         }
         self.encounter_floors.insert(encounter.id.clone(), cluster_id.into());
         self.floors[index].encounters.insert(encounter.id.clone(), encounter);
+        self.version += 1;
         Ok(())
     }
 
     pub fn snapshot(&self, status: &str) -> DungeonRunSnapshot {
+        self.build(status, &mut None)
+    }
+
+    /// The snapshot, shared until the run changes; totals reuse the timeline points of encounters that did not move,
+    /// so a fight on the last floor costs that floor, not the whole run.
+    pub fn snapshot_shared(&mut self, status: &str) -> Arc<DungeonRunSnapshot> {
+        if let Some((version, cached_status, snapshot)) = &self.cached
+            && *version == self.version
+            && cached_status == status
+        {
+            return snapshot.clone();
+        }
+        let mut shifts = Some(std::mem::take(&mut self.shifts));
+        let snapshot = Arc::new(self.build(status, &mut shifts));
+        self.shifts = shifts.unwrap();
+        self.cached = Some((self.version, status.to_owned(), snapshot.clone()));
+        snapshot
+    }
+
+    fn build(&self, status: &str, shifts: &mut Option<Shifts>) -> DungeonRunSnapshot {
         let floors: Vec<DungeonFloor> = self
             .floors
             .iter()
             .map(|floor| {
                 let encounters: Vec<CombatSnapshot> = floor.encounters.values().cloned().collect();
-                let totals = self.aggregate(&encounters.iter().collect::<Vec<_>>(), format!("{}:{}", self.id, floor.id), status);
+                let totals = self.aggregate(&encounters.iter().collect::<Vec<_>>(), format!("{}:{}", self.id, floor.id), status, shifts, false);
                 DungeonFloor { id: floor.id.clone(), number: floor.number, map_id: floor.map_id.clone(), map_name: floor.map_name.clone(), encounters, totals }
             })
             .collect();
         let all: Vec<&CombatSnapshot> = floors.iter().flat_map(|floor| floor.encounters.iter()).collect();
-        let totals = self.aggregate(&all, self.id.clone(), status);
+        let totals = self.aggregate(&all, self.id.clone(), status, shifts, true);
         DungeonRunSnapshot {
             id: self.id.clone(),
             started_at: self.started_at,
@@ -196,7 +235,7 @@ impl DungeonRun {
         }
     }
 
-    fn aggregate(&self, encounters: &[&CombatSnapshot], id: String, status: &str) -> CombatSnapshot {
+    fn aggregate(&self, encounters: &[&CombatSnapshot], id: String, status: &str, shifts: &mut Option<Shifts>, run: bool) -> CombatSnapshot {
         let seconds: f64 = encounters.iter().map(|e| e.elapsed_seconds).sum();
         let damage: f64 = encounters.iter().map(|e| e.total_damage).sum();
         let healing: f64 = encounters.iter().map(|e| e.total_healing).sum();
@@ -247,29 +286,107 @@ impl DungeonRun {
                 ..(*group.last().unwrap()).clone()
             })
             .collect();
-        let mut timeline: BTreeMap<i32, TimelinePoint> = BTreeMap::new();
+        // A second fed by one encounter point is that point (moved to its second): C# builds an equal copy by adding
+        // it to empty maps. Only seconds where encounters meet are added up.
+        enum Slot {
+            One(Arc<TimelinePoint>),
+            Many(TimelinePoint),
+        }
+        fn add(output: &mut Values, input: Option<&Values>) {
+            for (key, value) in input.into_iter().flat_map(|values| values.iter()) {
+                let total = output.get(&key).copied().unwrap_or(0.0) + value;
+                output.insert(key, total);
+            }
+        }
+        fn add_point(target: &mut TimelinePoint, point: &TimelinePoint) {
+            add(&mut target.damage, Some(&point.damage));
+            add(&mut target.healing, Some(&point.healing));
+            add(target.weapon_damage.as_mut().unwrap(), point.weapon_damage.as_ref());
+            add(target.weapon_healing.as_mut().unwrap(), point.weapon_healing.as_ref());
+            add(target.item_damage.as_mut().unwrap(), point.item_damage.as_ref());
+            add(target.item_healing.as_mut().unwrap(), point.item_healing.as_ref());
+        }
+        fn moved(encounter: &CombatSnapshot, offset: f64) -> Vec<Arc<TimelinePoint>> {
+            encounter
+                .timeline
+                .iter()
+                .map(|point| {
+                    let second = (offset + f64::from(point.second)).floor() as i32;
+                    if second == point.second { point.clone() } else { Arc::new(TimelinePoint { second, ..(**point).clone() }) }
+                })
+                .collect()
+        }
+        // Encounters come in start order and each one's seconds after the last one's (they meet on at most one
+        // boundary second), so the totals are merged in one pass; any other layout goes through a map.
+        // One encounter at offset 0 is its own timeline: every point lands on its own second.
+        let single = match encounters {
+            [only] => Some(only.timeline.clone()),
+            _ => None,
+        };
+        let mut timeline: Vec<Slot> = Vec::new();
+        let mut unordered: Option<BTreeMap<i32, Slot>> = None;
         let mut ordered: Vec<&&CombatSnapshot> = encounters.iter().collect();
         ordered.sort_by_key(|e| e.started_at);
         let mut offset = 0.0;
-        fn add(output: &mut Values, input: Option<&Values>) {
-            for (key, value) in input.into_iter().flat_map(|values| values.iter()) {
-                let total = output.get(key).copied().unwrap_or(0.0) + value;
-                output.insert(key.clone(), total);
+        for encounter in ordered.into_iter().filter(|_| single.is_none()) {
+            let points = match shifts {
+                Some(shifts) => {
+                    let entry = shifts.entry((run, encounter.id.clone())).or_insert_with(|| (-1, 0, Vec::new()));
+                    if entry.0 != encounter.sequence || entry.1 != f64::to_bits(offset) || entry.2.len() != encounter.timeline.len() {
+                        *entry = (encounter.sequence, offset.to_bits(), moved(encounter, offset));
+                    }
+                    entry.2.clone()
+                }
+                None => moved(encounter, offset),
+            };
+            fn second(slot: &Slot) -> i32 {
+                match slot {
+                    Slot::One(point) => point.second,
+                    Slot::Many(point) => point.second,
+                }
             }
-        }
-        for encounter in ordered {
-            for point in &encounter.timeline {
-                let second = (offset + f64::from(point.second)).floor() as i32;
-                let target = timeline.entry(second).or_insert_with(|| TimelinePoint::empty(second));
-                add(&mut target.damage, Some(&point.damage));
-                add(&mut target.healing, Some(&point.healing));
-                add(target.weapon_damage.as_mut().unwrap(), point.weapon_damage.as_ref());
-                add(target.weapon_healing.as_mut().unwrap(), point.weapon_healing.as_ref());
-                add(target.item_damage.as_mut().unwrap(), point.item_damage.as_ref());
-                add(target.item_healing.as_mut().unwrap(), point.item_healing.as_ref());
+            fn join(slot: &mut Slot, point: &TimelinePoint) {
+                if let Slot::One(first) = slot {
+                    let mut target = TimelinePoint::empty(first.second);
+                    add_point(&mut target, first);
+                    *slot = Slot::Many(target);
+                }
+                if let Slot::Many(target) = slot {
+                    add_point(target, point);
+                }
+            }
+            for point in points {
+                if unordered.is_none() && timeline.last().is_some_and(|last| second(last) > point.second) {
+                    unordered = Some(timeline.drain(..).map(|slot| (second(&slot), slot)).collect());
+                }
+                match &mut unordered {
+                    Some(map) => match map.entry(point.second) {
+                        std::collections::btree_map::Entry::Vacant(slot) => {
+                            slot.insert(Slot::One(point));
+                        }
+                        std::collections::btree_map::Entry::Occupied(mut slot) => join(slot.get_mut(), &point),
+                    },
+                    None => match timeline.last_mut() {
+                        Some(last) if second(last) == point.second => join(last, &point),
+                        _ => timeline.push(Slot::One(point)),
+                    },
+                }
             }
             offset += encounter.elapsed_seconds;
         }
+        let slots: Vec<Slot> = match unordered {
+            Some(map) => map.into_values().collect(),
+            None => timeline,
+        };
+        let timeline = single.unwrap_or_else(|| {
+            slots
+                .into_iter()
+                .map(|slot| match slot {
+                    Slot::One(point) => point,
+                    Slot::Many(point) => Arc::new(point),
+                })
+                .collect()
+        });
         CombatSnapshot {
             id,
             started_at: self.started_at,
@@ -281,7 +398,7 @@ impl DungeonRun {
             total_damage: damage,
             total_healing: healing,
             members,
-            timeline: timeline.into_values().map(Arc::new).collect(),
+            timeline,
             full: true,
             location: encounters.first().and_then(|e| e.location.clone()),
             former_members: None,

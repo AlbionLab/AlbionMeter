@@ -7,6 +7,10 @@
 //! OpenGL), `--fake-update` (an update downloads and becomes ready), `--view meter|capture|game|journal`, `--journal`
 //! (shows the dungeon journal tab), `--lang en|pt`, `--screenshots <dir>` (saves a PNG of every screen, then quits).
 
+// A window app on Windows, not a console one: no black console opens beside the meter. Debug builds keep the console
+// for their logs; a release build still writes to a console or pipe it is started from (the CI smoke test reads those).
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod controller;
 mod desktop;
 mod fake;

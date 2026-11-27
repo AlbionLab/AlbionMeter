@@ -12,6 +12,19 @@ fn main() {
             println!("cargo:rustc-link-arg=/INCLUDE:__imp_{symbol}");
         }
     }
+    // What Windows shows for the exe (Task Manager, Explorer, the taskbar): the name Albion Meter and the AlbionLab logo,
+    // instead of the file name and a blank icon.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        let mut resource = winresource::WindowsResource::new();
+        resource
+            .set_icon("assets/icon.ico")
+            .set("FileDescription", "Albion Meter")
+            .set("ProductName", "Albion Meter")
+            .set("CompanyName", "AlbionLab")
+            .set("LegalCopyright", "AlbionLab")
+            .set("OriginalFilename", "meter-app.exe");
+        resource.compile().expect("Windows resources compile");
+    }
     // Debug builds keep the element names and accessibility data the UI tests and fixture screenshots look controls up by.
     let debug = std::env::var("PROFILE").as_deref() == Ok("debug");
     let config = slint_build::CompilerConfiguration::new().with_style("fluent-dark".into()).with_debug_info(debug);

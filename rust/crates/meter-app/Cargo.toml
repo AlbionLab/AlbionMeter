@@ -43,3 +43,4 @@ i-slint-backend-testing = "=1.19.1"
 
 [build-dependencies]
 slint-build = "1.19"
+winresource = "0.1.34"

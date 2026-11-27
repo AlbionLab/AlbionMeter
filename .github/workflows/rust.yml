@@ -23,7 +23,8 @@ env:
   NPCAP_SDK: https://npcap.com/dist/npcap-sdk-1.15.zip
   VELOPACK_VERSION: 1.2.161
 jobs:
-  build:
+  # Lint and tests, in parallel with the package job below: the two used to run one after the other in one job.
+  check:
     strategy:
       fail-fast: false
       matrix:
@@ -33,6 +34,11 @@ jobs:
           - os: windows-latest
             exe: meter-app.exe
     runs-on: ${{ matrix.os }}
+    # Line tables only in the test build: stacks keep their file and line (the Windows crash report), and the debug
+    # build and its link take a fraction of full debug info. The release build is untouched.
+    env:
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
     defaults:
       run:
         shell: bash
@@ -92,31 +98,6 @@ jobs:
                   for part in range(0, len(block), 3800):
                       chunk = block[part:part + 3800]
                       print('::error title=meter-app test crash, ' + marker.lower() + ' ' + str(part // 3800 + 1) + '::' + chunk.replace('%', '%25').replace('\\r', '').replace('\\n', '%0A'))"
-      - name: Release build
-        if: success() || failure()
-        id: release
-        run: scripts/ci-run.sh cargo build --release -p meter-app
-      # The shipped executable, headless: a fixture screen, then a synthetic fight replayed through the real runtime, with
-      # throwaway settings and storage (on Windows without Npcap installed: wpcap.dll is delay-loaded).
-      - name: Smoke test
-        if: (success() || failure()) && steps.release.outcome == 'success'
-        id: smoke
-        env:
-          ALBION_METER_PACKAGED: 0
-        run: |
-          export ALBION_METER_CONFIG_DIR="$RUNNER_TEMP/smoke-settings"
-          mkdir -p ../smoke
-          scripts/ci-run.sh cargo run -q -p meter-app --example synthetic-pcap -- ../smoke/pcaps
-          exe="target/release/${{ matrix.exe }}"
-          scripts/ci-run.sh "$exe" --screen meter-damage --screenshot ../smoke/fixture.png
-          scripts/ci-run.sh "$exe" "--Storage:Directory=$RUNNER_TEMP/smoke-storage" --replay ../smoke/pcaps/solo.pcap --screenshot ../smoke/replay.png
-          ls -l ../smoke/*.png
-          echo "::notice title=smoke test (${{ runner.os }})::the release executable rendered a fixture screen and a replayed fight"
-      - uses: actions/upload-artifact@v4
-        if: (success() || failure()) && steps.smoke.outcome != 'skipped'
-        with:
-          name: smoke-${{ runner.os }}
-          path: smoke/*.png
       # Which DLL each executable takes WaitOnAddress from; nothing may come from vertdll (the enclave runtime: pcap's
       # windows-sys 0.36 import library binds WaitOnAddress there, see meter-app/build.rs).
       - name: Imports
@@ -150,7 +131,90 @@ jobs:
           for line in wrong:
               print('::error title=vertdll import::' + line)
           sys.exit(1 if wrong else 0)
-          " "$test" target/release/${{ matrix.exe }}
+          " "$test"
+  # The shipped executable and its packages; the release profile (fat LTO, one codegen unit, opt-level s) is what keeps
+  # the meter small and fast, so only the work around it is trimmed.
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            exe: meter-app
+          - os: windows-latest
+            exe: meter-app.exe
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Linux libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libpcap-dev libxkbcommon-dev libwayland-dev libfontconfig1-dev
+      # wpcap.lib to link against; wpcap.dll itself is delay-loaded (rust/.cargo/config.toml), so no Npcap install is needed.
+      - name: Npcap SDK
+        if: runner.os == 'Windows'
+        run: |
+          curl -sSfL "$NPCAP_SDK" -o "$RUNNER_TEMP/npcap-sdk.zip"
+          unzip -q "$RUNNER_TEMP/npcap-sdk.zip" -d "$RUNNER_TEMP/npcap-sdk"
+          echo "LIBPCAP_LIBDIR=$RUNNER_TEMP\\npcap-sdk\\Lib\\x64" >> "$GITHUB_ENV"
+      - name: Release build
+        id: release
+        run: scripts/ci-run.sh cargo build --release -p meter-app
+      # The shipped executable, headless: a fixture screen, then a synthetic fight replayed through the real runtime, with
+      # throwaway settings and storage (on Windows without Npcap installed: wpcap.dll is delay-loaded).
+      - name: Smoke test
+        if: (success() || failure()) && steps.release.outcome == 'success'
+        id: smoke
+        env:
+          ALBION_METER_PACKAGED: 0
+        run: |
+          export ALBION_METER_CONFIG_DIR="$RUNNER_TEMP/smoke-settings"
+          mkdir -p ../smoke
+          exe="target/release/${{ matrix.exe }}"
+          scripts/ci-run.sh "$exe" --screen meter-damage --screenshot ../smoke/fixture.png
+          scripts/ci-run.sh "$exe" "--Storage:Directory=$RUNNER_TEMP/smoke-storage" --replay crates/meter-app/tests/fixtures/solo.pcap --screenshot ../smoke/replay.png
+          ls -l ../smoke/*.png
+          echo "::notice title=smoke test (${{ runner.os }})::the release executable rendered a fixture screen and a replayed fight"
+      - uses: actions/upload-artifact@v4
+        if: (success() || failure()) && steps.smoke.outcome != 'skipped'
+        with:
+          name: smoke-${{ runner.os }}
+          path: smoke/*.png
+      # Which DLL each executable takes WaitOnAddress from; nothing may come from vertdll (the enclave runtime: pcap's
+      # windows-sys 0.36 import library binds WaitOnAddress there, see meter-app/build.rs).
+      - name: Imports
+        if: (success() || failure()) && runner.os == 'Windows'
+        run: |
+          python3 -m pip install -q pefile
+          python3 -c "
+          import pefile, sys
+          wrong = []
+          for path in sys.argv[1:]:
+              if not path:
+                  continue
+              pe = pefile.PE(path, fast_load=True)
+              pe.parse_data_directories(directories=[pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_IMPORT'], pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT']])
+              lines = []
+              for kind in ('DIRECTORY_ENTRY_IMPORT', 'DIRECTORY_ENTRY_DELAY_IMPORT'):
+                  for entry in getattr(pe, kind, []):
+                      dll = entry.dll.decode()
+                      names = [imp.name.decode() for imp in entry.imports if imp.name]
+                      wanted = [name for name in names if 'WaitOnAddress' in name or 'WakeByAddress' in name or 'vertdll' in dll.lower()]
+                      lines.append(kind[16:] + ' ' + dll + ' (' + str(len(names)) + ')' + (': ' + ', '.join(wanted[:40]) if wanted else ''))
+                      if 'vertdll' in dll.lower():
+                          wrong.append(path + ' imports ' + ', '.join(names) + ' from ' + dll)
+              print('::notice title=imports of ' + path.replace(chr(92), '/').split('/')[-1] + '::' + '%0A'.join(lines)[:3900])
+          for line in wrong:
+              print('::error title=vertdll import::' + line)
+          sys.exit(1 if wrong else 0)
+          " target/release/${{ matrix.exe }}
       - name: Size
         if: (success() || failure()) && steps.release.outcome == 'success'
         run: ls -l "target/release/${{ matrix.exe }}" && echo "::notice title=meter-app size (${{ runner.os }})::$(stat -c %s "target/release/${{ matrix.exe }}" 2>/dev/null || wc -c < "target/release/${{ matrix.exe }}") bytes"
@@ -195,7 +259,7 @@ jobs:
   # Publishes the packages of both systems, only when every check passed on both.
   release:
     if: github.event_name == 'push'
-    needs: build
+    needs: [check, package]
     runs-on: ubuntu-latest
     permissions:
       contents: write

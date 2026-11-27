@@ -3,4 +3,34 @@ name = "meter-capture"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = ["pcap"]
+# Npcap/libpcap devices next to the system sockets. Windows binaries must delay-load wpcap.dll (see `npcap`).
+pcap = ["dep:pcap"]
+
 [dependencies]
+crossbeam-channel = "0.5.17"
+pcap = { version = "2.5.0", optional = true }
+serde = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2.191"
+
+[target.'cfg(windows)'.dependencies]
+socket2 = { version = "0.6.5", features = ["all"] }
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Networking_WinSock",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
+    "Win32_Security",
+    "Win32_System_IO",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Registry",
+    "Win32_System_SystemInformation",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[dev-dependencies]
+serde_json = { workspace = true }

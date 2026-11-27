@@ -1,6 +1,11 @@
 name: Rust
-# The Rust port (rust/): lint, tests, the release build and the Velopack packages, on Linux and Windows. Packages are
-# workflow artifacts only; nothing here creates a GitHub release.
+# The Rust port (rust/): lint, tests, the release build and the Velopack packages, on Linux and Windows. A push to `rust`
+# also publishes them, the way build.yml publishes the Electron meter:
+#   - `rust-v<version>`: the release of this version (Setup.exe, AppImage, the full packages), with the version taken from
+#     rust/Cargo.toml; pushing again without a new version replaces its files, as electron-builder's release does;
+#   - `rust-latest`: always the newest version's packages and `releases.<channel>.json`, the update feed (Velopack's
+#     latest.yml) the meter reads from a fixed address, however many Electron releases come after it.
+# Both are prereleases and never GitHub's "Latest": the Electron meter's updater keeps reading only its own releases.
 on:
   push:
     branches: [rust]
@@ -8,9 +13,10 @@ on:
     branches: [rust]
 permissions:
   contents: read
+# A newer push cancels a pull request's checks; a push's run always finishes, so a release is never left half done.
 concurrency:
   group: rust-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
   CARGO_TERM_COLOR: never
   NPCAP_SDK: https://npcap.com/dist/npcap-sdk-1.15.zip
@@ -152,7 +158,9 @@ jobs:
         with:
           name: meter-app-${{ runner.os }}
           path: rust/target/release/${{ matrix.exe }}
-      # Velopack: Setup.exe on Windows, an AppImage on Linux, on the rust-beta channel; built here, never published.
+      # Velopack: Setup.exe on Windows, an AppImage on Linux. A channel per system (rust-win, rust-linux), so both fit in
+      # one release; an installed meter updates on the channel it was packaged with. Full packages only, like the
+      # Electron installers: no delta against an earlier version.
       - uses: actions/setup-dotnet@v4
         if: (success() || failure()) && steps.release.outcome == 'success'
         with:
@@ -160,15 +168,20 @@ jobs:
       - name: Package
         if: (success() || failure()) && steps.release.outcome == 'success'
         id: package
+        env:
+          PUBLISH: ${{ github.event_name == 'push' }}
         run: |
           dotnet tool install -g vpk --version "$VELOPACK_VERSION"
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          # A published build carries the version itself; any other build is a CI prerelease of it.
+          if [ "$PUBLISH" != true ]; then version="$version-ci.$GITHUB_RUN_NUMBER"; fi
           mkdir -p ../package/assets
           cp "target/release/${{ matrix.exe }}" ../package/
           cp ../assets/game-data/combat.json ../assets/game-data/maps.json ../package/assets/
           if [ "$RUNNER_OS" = Windows ]; then icon=../src/AlbionMeter.Server/app.ico; else icon=crates/meter-app/assets/icon.png; fi
-          vpk pack --packId AlbionMeter --packVersion "$version-ci.$GITHUB_RUN_NUMBER" --packTitle "Albion Meter" --packAuthors AlbionLab \
-            --packDir ../package --mainExe "${{ matrix.exe }}" --icon "$icon" --channel rust-beta --outputDir ../releases
+          if [ "$RUNNER_OS" = Windows ]; then channel=rust-win; else channel=rust-linux; fi
+          vpk pack --packId AlbionMeter --packVersion "$version" --packTitle "Albion Meter" --packAuthors AlbionLab \
+            --packDir ../package --mainExe "${{ matrix.exe }}" --icon "$icon" --channel "$channel" --delta None --outputDir ../releases
           ls -l ../releases
           for file in ../releases/*; do echo "::notice title=package ($RUNNER_OS)::$(basename "$file") $(wc -c < "$file") bytes"; done
       - uses: actions/upload-artifact@v4
@@ -176,3 +189,68 @@ jobs:
         with:
           name: packages-${{ runner.os }}
           path: releases/
+  # Publishes the packages of both systems, only when every check passed on both.
+  release:
+    if: github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # One release at a time, in push order.
+    concurrency:
+      group: rust-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: rust/Cargo.toml
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@v4
+        with:
+          path: downloads
+          pattern: packages-*
+      - name: Collect packages
+        run: |
+          for system in Linux Windows; do
+            test -d "downloads/packages-$system" || { echo "::error::The $system packages are missing."; exit 1; }
+          done
+          mkdir packages
+          # Both systems in one release: a file name used by both would overwrite the other's.
+          duplicates=$(find downloads -type f -printf '%f\n' | sort | uniq -d)
+          if [ -n "$duplicates" ]; then echo "::error::Both systems produced: $duplicates"; exit 1; fi
+          find downloads -type f -exec mv -t packages {} +
+          ls -l packages
+          for feed in releases.rust-win.json releases.rust-linux.json; do
+            test -f "packages/$feed" || { echo "::error::The update feed $feed is missing."; exit 1; }
+          done
+          (cd packages && sha256sum * > SHA256SUMS.txt)
+          echo "VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' rust/Cargo.toml | head -1)" >> "$GITHUB_ENV"
+      - name: Publish rust-v${{ env.VERSION }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: rust-v${{ env.VERSION }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$TAG" packages/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" packages/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Albion Meter $VERSION (Rust beta)" \
+              --generate-notes --prerelease --latest=false
+          fi
+      # The feed the meter reads: this version's files are uploaded first and the older ones removed after, so a meter
+      # checking meanwhile always finds a complete feed.
+      - name: Update rust-latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: rust-latest
+        run: |
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Albion Meter (Rust beta) — update feed" \
+              --notes "The newest Rust build of Albion Meter, read by the meter's updater. Every version also has its own rust-v<version> release." \
+              --prerelease --latest=false
+          fi
+          gh release upload "$TAG" packages/* --repo "$GITHUB_REPOSITORY" --clobber
+          current=$(ls packages)
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | while read -r name; do
+            if ! grep -qxF "$name" <<< "$current"; then gh release delete-asset "$TAG" "$name" --repo "$GITHUB_REPOSITORY" --yes; fi
+          done
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "Albion Meter $VERSION (Rust beta) — update feed"

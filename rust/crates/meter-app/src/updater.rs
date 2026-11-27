@@ -1,19 +1,22 @@
 //! Updates with Velopack, as electron-updater did in desktop/main.js: a check at start and every six hours, the download
 //! with its progress, "ready" in the update toast, and the install either when the player restarts from the toast or
-//! when the meter closes. The feed is AlbionMeter's GitHub releases on the `rust-beta` channel, so the Electron
-//! build's users are never offered it. Only an installed meter updates (Velopack says so; a development build does
-//! not).
+//! when the meter closes. Only an installed meter updates (Velopack says so; a development build does not).
+//!
+//! The feed is the `rust-latest` GitHub release that .github/workflows/rust.yml keeps up to date with the newest
+//! version's packages and `releases.<channel>.json` (Velopack's latest.yml). It is read from that fixed address rather
+//! than by listing the repository's releases: Velopack's GitHub source only looks at the ten newest, and the Electron
+//! meter's releases would push the Rust ones out of them. The channel is the one the meter was packaged with
+//! (`rust-win` or `rust-linux`), so each system gets its own packages.
 
 use std::sync::Mutex;
 use std::time::Duration;
 
-use velopack::sources::GithubSource;
+use velopack::sources::HttpSource;
 use velopack::{UpdateCheck, UpdateInfo, UpdateManager, UpdateOptions};
 
 use crate::feed::UpdateState;
 
-pub const REPOSITORY: &str = "https://github.com/AlbionLab/AlbionMeter";
-pub const CHANNEL: &str = "rust-beta";
+pub const FEED: &str = "https://github.com/AlbionLab/AlbionMeter/releases/download/rust-latest";
 const CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 
 /// The downloaded update, and whether the player asked to restart into it.
@@ -35,8 +38,7 @@ pub fn hooks() {
 }
 
 fn manager() -> Option<UpdateManager> {
-    let options = UpdateOptions { ExplicitChannel: Some(CHANNEL.into()), ..UpdateOptions::default() };
-    UpdateManager::new(GithubSource::new(REPOSITORY, None, true), Some(options), None).ok()
+    UpdateManager::new(HttpSource::new(FEED), Some(UpdateOptions::default()), None).ok()
 }
 
 /// Starts watching for updates when this meter was installed by Velopack; `publish` receives the toast states.

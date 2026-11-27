@@ -376,7 +376,8 @@ pub struct Ui {
     pub range: String,
     pub key: String,
     pub copy_menu: bool,
-    /// The accessible label of the control the pointer rests on.
+    /// The accessible label of the control the pointer rests on (feature `parity`).
+    #[cfg_attr(not(feature = "parity"), allow(dead_code))]
     pub hover: String,
     pub search: String,
     pub tab: String,

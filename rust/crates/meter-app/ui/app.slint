@@ -45,7 +45,7 @@ export component AppWindow inherits Window {
             vertical-stretch: 1;
             content-width: self.visible-width;
             content-height: content.preferred-height;
-            viewport-y <=> Shell.scroll-y;
+            content-y <=> Shell.scroll-y;
             content := VerticalLayout {
                 width: scroll.visible-width;
                 padding-left: 20px;

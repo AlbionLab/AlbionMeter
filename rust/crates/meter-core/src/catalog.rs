@@ -148,12 +148,14 @@ impl CombatSourceCatalog {
         let mut items = HashMap::new();
         let mut order = Vec::new();
         let mut representatives: HashMap<String, i32> = HashMap::new();
-        for definition in data.items.iter().cloned() {
+        let item_ids = data.items.iter().map(|item| item.id.clone()).collect();
+        for mut definition in data.items {
             let family = family_of(&definition.id);
             let representative = representatives.entry(family.clone()).or_insert(definition.index);
             *representative = (*representative).min(definition.index);
-            let spells = definition.spells.as_ref().map(|list| list.iter().map(|name| intern(name)).collect());
-            let passives = definition.passive_spells.as_ref().map(|list| list.iter().map(|name| intern(name)).collect());
+            // Kept as interned names only: the strings (~87k of them, 3–4 MB) are not read again.
+            let spells = definition.spells.take().map(|list| list.iter().map(|name| intern(name)).collect());
+            let passives = definition.passive_spells.take().map(|list| list.iter().map(|name| intern(name)).collect());
             if !items.contains_key(&definition.index) {
                 order.push(definition.index);
             }
@@ -161,7 +163,7 @@ impl CombatSourceCatalog {
             items.insert(definition.index, Item { definition, slot, family, spells, passives });
         }
         Self {
-            item_ids: data.items.iter().map(|item| item.id.clone()).collect(),
+            item_ids,
             items,
             order,
             spells,

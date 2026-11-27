@@ -183,7 +183,32 @@ struct Plot {
     right: f32,
 }
 
+/// One model per row id for a list inside a row: Slint compares models by pointer, so a row given a new model each
+/// render counts as changed and its whole subtree is rebuilt; given the same model, synced, it stays as it is.
+struct Nested<T>(RefCell<HashMap<String, Rc<VecModel<T>>>>);
+
+impl<T> Default for Nested<T> {
+    fn default() -> Self {
+        Self(RefCell::default())
+    }
+}
+
+impl<T: Clone + PartialEq + 'static> Nested<T> {
+    fn model(&self, id: String, rows: Vec<T>) -> ModelRc<T> {
+        let model = self.0.borrow_mut().entry(id).or_default().clone();
+        sync(&model, rows);
+        ModelRc::from(model)
+    }
+
+    fn clear(&self) {
+        self.0.borrow_mut().clear();
+    }
+}
+
 pub struct Journal {
+    /// The inspector's item lists and the progression rows' cells, by row.
+    inspector_items: Nested<InspectorItem>,
+    progression_cells: Nested<Cell>,
     app: slint::Weak<AppWindow>,
     commands: Sender<Command>,
     language: Language,
@@ -257,6 +282,8 @@ impl Journal {
             visible: false,
             stale: false,
             requested: RefCell::default(),
+            inspector_items: Nested::default(),
+            progression_cells: Nested::default(),
             item_ids: Rc::new(|_| None),
             run_rows: Rc::default(),
             tabs: Rc::default(),
@@ -437,13 +464,9 @@ impl Journal {
         }));
         state.on_export_history(on(|journal| journal.export(None)));
         state.on_import_history(on(|journal| {
-            let Some(file) = desktop::pick(false, "Import history", &["*.zip", "*.json"]) else { return };
-            if std::fs::metadata(&file).is_ok_and(|meta| meta.len() > 40_000_000) {
-                journal.history_message("Choose a history file smaller than 40 MB.".into(), true);
-                return;
+            if let Some(file) = desktop::pick(false, "Import history", &["*.zip", "*.json"], |this, file| this.journal.import_chosen(file)) {
+                journal.import_chosen(file);
             }
-            journal.with(|state| state.set_importing(true));
-            let _ = journal.commands.send(Command::ImportHistory(file));
         }));
         state.on_dismiss_transfer(on(|journal| journal.with(|state| state.set_transfer_message("".into()))));
         let weak = Rc::downgrade(this);
@@ -511,8 +534,12 @@ impl Journal {
         }
     }
 
+    /// Keeps an icon; `icons_changed` redraws once a batch of them has arrived.
     pub fn add_icon(&mut self, id: Arc<str>, image: slint::Image) {
         self.icons.insert(id, image);
+    }
+
+    pub fn icons_changed(&mut self) {
         self.refresh();
     }
 
@@ -539,6 +566,15 @@ impl Journal {
         if let Some(app) = self.app.upgrade() {
             apply(&app.global::<JournalState>());
         }
+    }
+
+    fn import_chosen(&mut self, file: PathBuf) {
+        if std::fs::metadata(&file).is_ok_and(|meta| meta.len() > 40_000_000) {
+            self.history_message("Choose a history file smaller than 40 MB.".into(), true);
+            return;
+        }
+        self.with(|state| state.set_importing(true));
+        let _ = self.commands.send(Command::ImportHistory(file));
     }
 
     fn export(&mut self, dungeon: Option<Arc<str>>) {
@@ -582,6 +618,8 @@ impl Journal {
 
     pub fn run(&mut self, run: Arc<DungeonRun>) {
         if self.run.as_ref().is_none_or(|previous| previous.summary.id != run.summary.id) {
+            self.inspector_items.clear();
+            self.progression_cells.clear();
             self.offset = 0;
             self.pinned = None;
             self.loadout_open = None;
@@ -970,7 +1008,7 @@ impl Journal {
                 value: precise(language, amount).into(),
                 share: percent(amount, total).into(),
                 open: self.open_players.contains(&*player.id),
-                items: ModelRc::new(VecModel::from(item_rows)),
+                items: self.inspector_items.model(player.id.to_string(), item_rows),
             }
         });
         sync(&self.inspector, rows);
@@ -1103,7 +1141,7 @@ impl Journal {
                 open: is_open,
                 name: member.name.as_ref().into(),
                 sub: seen.as_ref().map_or(&*member.weapon, |seen| seen.1.as_str()).into(),
-                cells: ModelRc::new(VecModel::from(cells)),
+                cells: self.progression_cells.model(format!("p|{}", member.id), cells),
                 icon: identity.0,
                 has_icon: identity.1,
                 tier: identity.2.into(),
@@ -1130,7 +1168,7 @@ impl Journal {
                     open: false,
                     name: item.first.item.as_ref().into(),
                     sub: slot_name(&item.first.slot).into(),
-                    cells: ModelRc::new(VecModel::from(cells)),
+                    cells: self.progression_cells.model(format!("i|{}", item.id), cells),
                     icon: self.item_icon(&item).0,
                     has_icon: self.item_icon(&item).1,
                     tier: item_tier(&item).into(),

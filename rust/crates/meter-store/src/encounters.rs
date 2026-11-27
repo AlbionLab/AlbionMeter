@@ -178,13 +178,17 @@ impl EncounterStore {
     }
 
     fn write_encounter(&self, summary: &EncounterSummary, snapshot: &str) -> Result<()> {
+        // Before the connection: identities take this lock first.
+        self.written.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).labels.clear();
         let mut connection = self.connection();
         let transaction = connection.transaction()?;
+        // Players named since an earlier save of this record are named again in the text in hand, before it is
+        // written: C# wrote, read back and rewrote it, which is the same row at twice the work.
+        let named = crate::identity::reapply(&transaction, &summary.id, snapshot)?;
         transaction.execute(
             "INSERT OR REPLACE INTO encounters VALUES ($id, $date, $summary, $snapshot)",
-            params![summary.id, summary.started_at.to_round_trip(), json::to_string(summary)?, snapshot],
+            params![summary.id, summary.started_at.to_round_trip(), json::to_string(summary)?, named.as_deref().unwrap_or(snapshot)],
         )?;
-        crate::identity::reapply(&transaction, &summary.id)?;
         transaction.execute(
             &format!("DELETE FROM encounters WHERE id IN (SELECT id FROM encounters ORDER BY (COALESCE(json_extract(summary, '$.damage'), 0) + COALESCE(json_extract(summary, '$.healing'), 0)) > 0, started_at LIMIT MAX(0, (SELECT COUNT(*) FROM encounters) - {RETAINED_ENCOUNTERS}))"),
             [],

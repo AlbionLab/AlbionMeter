@@ -15,7 +15,7 @@ use windows::Win32::NetworkManagement::IpHelper::{
 };
 use windows::Win32::NetworkManagement::Ndis::IfOperStatusUp;
 use windows::Win32::Networking::WinSock::{
-    AF_INET, POLLRDNORM, SIO_RCVALL, SOCKADDR, SOCKADDR_IN, SOCKET, WSAEACCES, WSAEMSGSIZE,
+    AF_INET, POLLERR, POLLHUP, POLLNVAL, POLLRDNORM, SIO_RCVALL, SOCKADDR, SOCKADDR_IN, SOCKET, WSAEACCES, WSAEMSGSIZE,
     WSAGetLastError, WSAIoctl, WSAPOLLFD, WSAPoll,
 };
 
@@ -366,12 +366,30 @@ impl FrameSource for AllAdaptersCapture {
                 return Ok(Read::Idle);
             }
         }
-        for (capture, polled) in self.sockets.values_mut().zip(&self.polls) {
-            if polled.revents.0 != 0 && capture.receive(frame, false)? == Read::Frame {
-                return Ok(Read::Frame);
+        // One adapter that fails (a VPN or ExitLag adapter going away) is dropped and the others go on capturing; the
+        // next scan opens it again if it comes back.
+        let mut failed = vec![];
+        let mut read = Read::Idle;
+        for ((name, capture), polled) in self.sockets.iter_mut().zip(&self.polls) {
+            if polled.revents.0 & (POLLERR.0 | POLLHUP.0 | POLLNVAL.0) != 0 {
+                failed.push(name.clone());
+                continue;
+            }
+            if polled.revents.0 != 0 {
+                match capture.receive(frame, false) {
+                    Ok(Read::Frame) => {
+                        read = Read::Frame;
+                        break;
+                    }
+                    Ok(_) => {}
+                    Err(_) => failed.push(name.clone()),
+                }
             }
         }
-        Ok(Read::Idle)
+        for name in failed {
+            self.sockets.remove(&name);
+        }
+        Ok(read)
     }
 
     fn statistics(&mut self) -> Option<AdapterStatistics> {

@@ -21,6 +21,10 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
 const KEEP_ALIVE: Duration = Duration::from_secs(15);
 const SERVER_TIMEOUT: Duration = Duration::from_secs(30);
 const RECONNECT_DELAYS: [u64; 4] = [0, 2, 10, 30];
+/// How long an invocation waits for its completion, and a frame for the socket to take it: a stalled link fails the
+/// call instead of holding the publish loop.
+const INVOKE_TIMEOUT: Duration = Duration::from_secs(15);
+const SEND_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HubState {
@@ -153,7 +157,7 @@ impl HubConnection {
     /// Calls a hub method and waits for its completion.
     pub async fn invoke<T: DeserializeOwned>(&self, target: &str, arguments: impl Serialize) -> Result<T, HubError> {
         let (sender, receiver) = oneshot::channel();
-        {
+        let id = {
             let mut link = self.shared.link();
             let Some(channel) = link.sender.clone().filter(|_| link.state == HubState::Connected) else { return Err(HubError::NotConnected) };
             let id = self.shared.next_id.fetch_add(1, Ordering::Relaxed).to_string();
@@ -163,8 +167,13 @@ impl HubConnection {
                 link.pending.remove(&id);
                 return Err(HubError::NotConnected);
             }
-        }
-        let result = receiver.await.map_err(|_| HubError::Closed("The connection was stopped.".into()))??;
+            id
+        };
+        let Ok(answer) = tokio::time::timeout(INVOKE_TIMEOUT, receiver).await else {
+            self.shared.link().pending.remove(&id);
+            return Err(HubError::Timeout);
+        };
+        let result = answer.map_err(|_| HubError::Closed("The connection was stopped.".into()))??;
         serde_json::from_value(result).map_err(|error| HubError::Hub(format!("Unexpected result: {error}")))
     }
 
@@ -185,6 +194,14 @@ impl HubConnection {
 
 fn header(value: &str) -> Result<HeaderValue, HubError> {
     HeaderValue::from_str(value).map_err(|error| HubError::Http(error.to_string()))
+}
+
+/// A frame to the socket, or why it could not go (a link that stopped taking data counts).
+async fn send(socket: &mut Socket, message: Message) -> Result<(), String> {
+    match tokio::time::timeout(SEND_TIMEOUT, socket.send(message)).await {
+        Ok(result) => result.map_err(|error| error.to_string()),
+        Err(_) => Err("The connection stopped taking data.".into()),
+    }
 }
 
 impl Shared {
@@ -332,7 +349,7 @@ impl Shared {
             }
             tokio::select! {
                 outgoing = receiver.recv() => match outgoing {
-                    Some(text) => if let Err(error) = socket.send(Message::text(text)).await { return Ended::Lost(error.to_string()) },
+                    Some(text) => if let Err(error) = send(socket, Message::text(text)).await { return Ended::Lost(error) },
                     None => return Ended::Stopped,
                 },
                 incoming = socket.next() => {
@@ -346,8 +363,8 @@ impl Shared {
                     }
                 }
                 _ = ping.tick() => {
-                    if let Err(error) = socket.send(Message::text(format!("{{\"type\":6}}{SEPARATOR}"))).await {
-                        return Ended::Lost(error.to_string());
+                    if let Err(error) = send(socket, Message::text(format!("{{\"type\":6}}{SEPARATOR}"))).await {
+                        return Ended::Lost(error);
                     }
                 }
                 _ = tokio::time::sleep_until(heard + SERVER_TIMEOUT) => {

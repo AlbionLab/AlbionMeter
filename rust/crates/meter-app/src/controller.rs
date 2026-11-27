@@ -154,6 +154,8 @@ pub struct Controller {
     /// Owns the clipboard while an image copied there is offered (X11 and Wayland need a living owner).
     image_clipboard: Option<arboard::Clipboard>,
     icon_paths: HashMap<Arc<str>, std::path::PathBuf>,
+    /// Icons arrived and the redraw for them is scheduled.
+    icons_arrived: bool,
     capture: Option<Arc<CaptureStatus>>,
     devices: Option<Arc<DeviceList>>,
     method: String,
@@ -205,6 +207,7 @@ impl Controller {
             copy_busy: false,
             image_clipboard: None,
             icon_paths: HashMap::new(),
+            icons_arrived: false,
             capture: None,
             devices: None,
             method: "socket".into(),
@@ -365,15 +368,9 @@ impl Controller {
             this.render_capture();
         })));
         capture.on_replay(on(Box::new(|this| {
-            let Some(file) = desktop::pick(false, "Replay capture", &["*.pcap", "*.pcapng", "*.cap"]) else { return };
-            if std::fs::metadata(&file).is_ok_and(|meta| meta.len() > 40_000_000) {
-                this.capture_error = this.t("Replay files are limited to 40 MB.").into();
-            } else {
-                this.capture_busy = true;
-                this.capture_error.clear();
-                this.send(Command::Replay(file));
+            if let Some(file) = desktop::pick(false, "Replay capture", &["*.pcap", "*.pcapng", "*.cap"], Controller::replay_chosen) {
+                this.replay_chosen(file);
             }
-            this.render_capture();
         })));
         capture.on_grant(on(Box::new(|this| {
             this.granting = true;
@@ -402,15 +399,31 @@ impl Controller {
             this.render_catalog();
         })));
         catalog.on_import(on(Box::new(|this| {
-            let Some(folder) = desktop::pick(true, "Import game folder", &[]) else { return };
-            this.catalog_busy = true;
-            this.catalog_message = this.t("Reading selected game files…").into();
-            this.send(Command::ImportCatalog(folder));
-            this.render_catalog();
+            if let Some(folder) = desktop::pick(true, "Import game folder", &[], Controller::game_folder_chosen) {
+                this.game_folder_chosen(folder);
+            }
         })));
 
         app.global::<MeterState>().set_bars(model(&this.borrow().bars));
         Journal::bind(this, app);
+    }
+
+    fn replay_chosen(&mut self, file: std::path::PathBuf) {
+        if std::fs::metadata(&file).is_ok_and(|meta| meta.len() > 40_000_000) {
+            self.capture_error = self.t("Replay files are limited to 40 MB.").into();
+        } else {
+            self.capture_busy = true;
+            self.capture_error.clear();
+            self.send(Command::Replay(file));
+        }
+        self.render_capture();
+    }
+
+    fn game_folder_chosen(&mut self, folder: std::path::PathBuf) {
+        self.catalog_busy = true;
+        self.catalog_message = self.t("Reading selected game files…").into();
+        self.send(Command::ImportCatalog(folder));
+        self.render_catalog();
     }
 
     pub fn handle(&mut self, event: FeedEvent) {
@@ -505,7 +518,16 @@ impl Controller {
                     self.journal.add_icon(id.clone(), image.clone());
                 }
                 self.icons.insert(id, image);
-                self.render_meter();
+                // Opening a dungeon asks for every item icon at once: one redraw after the batch, not one per icon.
+                if !std::mem::replace(&mut self.icons_arrived, true) {
+                    slint::Timer::single_shot(std::time::Duration::ZERO, || {
+                        with_controller(|this| {
+                            this.icons_arrived = false;
+                            this.render_meter();
+                            this.journal.icons_changed();
+                        })
+                    });
+                }
             }
         }
     }
@@ -594,7 +616,7 @@ impl Controller {
             meter.set_metric(metric.name().into());
             meter.set_total_note(note.into());
             meter.set_can_control(self.connection == Connection::Connected && !self.busy);
-            meter.set_copy_available(snapshot.is_some_and(|snapshot| !contributions(snapshot, metric).is_empty()));
+            meter.set_copy_available(snapshot.is_some_and(|snapshot| !snapshot.members.is_empty() || !snapshot.former_members.is_empty()));
             app.global::<Shell>().set_record_status(self.status().as_str().into());
         });
     }

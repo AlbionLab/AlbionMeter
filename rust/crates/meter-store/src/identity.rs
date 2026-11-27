@@ -65,6 +65,9 @@ pub struct IdentityResolution {
 /// What this store already wrote, so an unchanged character or a known piece of evidence is not written again.
 #[derive(Default)]
 pub(crate) struct Written {
+    /// The label each still-unnamed member was last given: one that did not change is not written into every record
+    /// again, until a record is saved (which may hold the member under its old name).
+    pub(crate) labels: HashMap<String, String>,
     characters: HashMap<Uuid, String>,
     evidence: HashSet<String>,
     skills: HashMap<i32, String>,
@@ -221,7 +224,14 @@ impl EncounterStore {
             )? > 0;
         }
         transaction.commit()?;
-        if changed { reconcile(&connection) } else { Ok(vec![]) }
+        if !changed {
+            return Ok(vec![]);
+        }
+        // One transaction for every rewrite the evidence leads to, not one commit (and disk sync) per record.
+        let transaction = connection.transaction()?;
+        let resolutions = reconcile(&transaction, &mut written.labels)?;
+        transaction.commit()?;
+        Ok(resolutions)
     }
 }
 
@@ -238,7 +248,7 @@ fn culture_order(a: &str, b: &str) -> Ordering {
     a.to_lowercase().cmp(&b.to_lowercase()).then_with(|| b.cmp(a))
 }
 
-fn reconcile(connection: &Connection) -> Result<Vec<IdentityResolution>> {
+fn reconcile(connection: &Connection, applied: &mut HashMap<String, String>) -> Result<Vec<IdentityResolution>> {
     let mut characters: HashMap<Uuid, String> = HashMap::new();
     {
         let mut statement = connection.prepare("SELECT id, name FROM characters")?;
@@ -321,8 +331,9 @@ fn reconcile(connection: &Connection) -> Result<Vec<IdentityResolution>> {
         apply(connection, resolution)?;
     }
     for (member, label) in &labels {
-        if resolutions.iter().all(|resolution| resolution.member_id != *member) {
+        if resolutions.iter().all(|resolution| resolution.member_id != *member) && applied.get(member) != Some(label) {
             update_records(connection, member, |node| rename(node, member, label))?;
+            applied.insert(member.clone(), label.clone());
         }
     }
     Ok(resolutions)
@@ -367,10 +378,11 @@ fn update_records(connection: &Connection, member: &str, mut change: impl FnMut(
     Ok(())
 }
 
-/// Names a re-saved live record's players again from what was already resolved for it.
-pub(crate) fn reapply(connection: &Connection, record: &str) -> Result<()> {
+/// Names a re-saved live record's players again from what was already resolved for it: the rewritten `snapshot`, or
+/// None when it names none of them. Only a snapshot whose text mentions a resolved member is parsed.
+pub(crate) fn reapply(connection: &Connection, record: &str, snapshot: &str) -> Result<Option<String>> {
     let resolved: Vec<IdentityResolution> = {
-        let mut statement = connection.prepare("SELECT member_id, resolved_id, resolved_name, method FROM unidentified_players WHERE record_id = $record AND resolved_id IS NOT NULL")?;
+        let mut statement = connection.prepare_cached("SELECT member_id, resolved_id, resolved_name, method FROM unidentified_players WHERE record_id = $record AND resolved_id IS NOT NULL")?;
         statement
             .query_map([record], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, String>(3)?)))?
             .filter_map(|row| match row {
@@ -379,19 +391,17 @@ pub(crate) fn reapply(connection: &Connection, record: &str) -> Result<()> {
             })
             .collect::<rusqlite::Result<_>>()?
     };
-    if resolved.is_empty() {
-        return Ok(());
+    // Member ids are plain ASCII, written unescaped: a quote before the id finds it as a key or a value.
+    let mentioned: Vec<&IdentityResolution> = resolved.iter().filter(|resolution| snapshot.contains(&format!("\"{}", resolution.member_id))).collect();
+    if mentioned.is_empty() {
+        return Ok(None);
     }
-    let json: Option<String> = connection.query_row("SELECT snapshot FROM encounters WHERE id = $id", [record], |row| row.get(0)).optional()?;
-    let Some(mut node) = json.and_then(|json| serde_json::from_str::<Value>(&json).ok()) else { return Ok(()) };
+    let Ok(mut node) = serde_json::from_str::<Value>(snapshot) else { return Ok(None) };
     let mut changed = false;
-    for resolution in &resolved {
+    for resolution in mentioned {
         changed |= merge(&mut node, &resolution.member_id, &resolution.character_id.to_string(), &resolution.name);
     }
-    if changed {
-        connection.execute("UPDATE encounters SET snapshot = $snapshot WHERE id = $id", params![json::to_string_node(&node)?, record])?;
-    }
-    Ok(())
+    Ok(if changed { Some(json::to_string_node(&node)?) } else { None })
 }
 
 fn apply(connection: &Connection, resolution: &IdentityResolution) -> Result<()> {

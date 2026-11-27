@@ -10,6 +10,7 @@ use crate::catalog::CombatSourceCatalog;
 use crate::cs::{CsMap, DateTimeOffset, Guid, is_blank};
 use crate::dungeon::{DungeonRun, DungeonRunSnapshot};
 use sha2::{Digest, Sha256};
+use std::collections::VecDeque;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -66,7 +67,10 @@ pub struct DungeonCombatObservation {
     recording: bool,
     record_id: Option<String>,
     last_location: Option<(Guid, String, String)>,
-    arrivals: Vec<Arrival>,
+    arrivals: VecDeque<Arrival>,
+    /// The earliest timestamp in `arrivals`: nothing has expired while it is inside the window, so the buffer is only
+    /// scanned when something did.
+    oldest_arrival: i64,
     templates: CsMap<String, String>,
     zone_connection: Option<Connection>,
     transition_at: Option<i64>,
@@ -88,7 +92,8 @@ impl DungeonCombatObservation {
             recording: true,
             record_id: None,
             last_location: None,
-            arrivals: Vec::new(),
+            arrivals: VecDeque::new(),
+            oldest_arrival: i64::MAX,
             templates: CsMap::new(),
             zone_connection: None,
             transition_at: None,
@@ -217,11 +222,15 @@ impl DungeonCombatObservation {
         let zone = self.zone_connection.clone().or_else(|| local.map(|l| l.connection.clone()));
         if !join && (Some(connection) != zone.as_ref() || self.transition_at.is_some_and(|leaving| timestamp >= leaving)) {
             self.combat.observe_connection(connection, timestamp);
-            self.arrivals.retain(|a| timestamp - a.timestamp <= ARRIVAL_WINDOW);
-            if self.arrivals.len() == MAXIMUM_ARRIVALS {
-                self.arrivals.remove(0);
+            if timestamp.saturating_sub(self.oldest_arrival) > ARRIVAL_WINDOW {
+                self.arrivals.retain(|a| timestamp - a.timestamp <= ARRIVAL_WINDOW);
+                self.oldest_arrival = self.arrivals.iter().map(|a| a.timestamp).min().unwrap_or(i64::MAX);
             }
-            self.arrivals.push(Arrival { message: wire.into_owned(), connection: connection.clone(), identity: message_id.clone(), timestamp, paused: self.paused });
+            if self.arrivals.len() == MAXIMUM_ARRIVALS {
+                self.arrivals.pop_front();
+            }
+            self.oldest_arrival = self.oldest_arrival.min(timestamp);
+            self.arrivals.push_back(Arrival { message: wire.into_owned(), connection: connection.clone(), identity: message_id.clone(), timestamp, paused: self.paused });
             return;
         }
         self.latest_timestamp = self.latest_timestamp.max(timestamp);

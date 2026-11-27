@@ -283,12 +283,11 @@ pub(crate) async fn store_loop(config: Config, shared: Arc<Shared>, publish: Pub
 pub(crate) struct Context(pub Arc<Shared>);
 
 impl LabContext for Context {
-    fn record(&self) -> Value {
-        let record = self.0.lab_view().record;
-        serde_json::to_value(&*record).unwrap_or_default()
+    fn record(&self) -> Arc<CombatSnapshot> {
+        self.0.lab_view().record
     }
-    fn dungeons(&self) -> Vec<Value> {
-        self.0.lab_view().dungeons.iter().filter_map(|run| serde_json::to_value(&**run).ok()).collect()
+    fn dungeons(&self) -> Vec<Arc<DungeonRunSnapshot>> {
+        self.0.lab_view().dungeons.to_vec()
     }
     fn character(&self) -> Option<(String, Option<String>)> {
         self.0.lab_view().character

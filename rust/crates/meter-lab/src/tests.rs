@@ -1,6 +1,8 @@
 use crate::signalr::{HubConnection, HubError, HubState};
 use crate::testing::{negotiate_then, FakeSite, Http, Invoke, Request};
 use crate::{AlbionLabService, LabContext, LabSession, Settings, WeaponIconCache};
+use meter_core::dungeon::DungeonRunSnapshot;
+use meter_core::engine::{CombatSnapshot, PlayerStats, TimelinePoint, Values, WeaponContribution};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -135,14 +137,14 @@ async fn signalr_reports_a_rejected_token() {
 // ---- AlbionLab service ----
 
 struct Meter {
-    record: Mutex<Value>,
+    record: Mutex<Arc<CombatSnapshot>>,
 }
 
 impl LabContext for Meter {
-    fn record(&self) -> Value {
+    fn record(&self) -> Arc<CombatSnapshot> {
         self.record.lock().unwrap().clone()
     }
-    fn dungeons(&self) -> Vec<Value> {
+    fn dungeons(&self) -> Vec<Arc<DungeonRunSnapshot>> {
         vec![]
     }
     fn character(&self) -> Option<(String, Option<String>)> {
@@ -159,17 +161,72 @@ impl LabContext for Meter {
     }
 }
 
-fn live_record(status: &str) -> Value {
-    json!({
-        "id": "rec-1", "startedAt": "2026-11-20T10:00:00+00:00", "elapsedSeconds": 2, "status": status, "mode": "live", "eventCount": 1,
-        "members": [{"id": "a", "name": "Alpha", "weapon": "Great Hammer", "weaponFamily": "hammer", "color": "#ffffff", "damage": 10, "membership": "active"}],
-        "timeline": [{"second": 0, "damage": {"a": 10}, "healing": {}, "weaponDamage": {"a:9022": 10}}],
-        "weaponContributions": [{"id": "a:9022", "playerId": "a", "weaponIndex": 9022, "weapon": "Great Hammer", "damage": 10}]
-    })
+fn values(entries: &[(&str, f64)]) -> Values {
+    let mut values = Values::new();
+    for (key, value) in entries {
+        values.insert((*key).into(), *value);
+    }
+    values
 }
 
-fn service(directory: &Path, site: &FakeSite, record: Value) -> AlbionLabService {
-    AlbionLabService::new(directory, Some(&site.address), Arc::new(Meter { record: Mutex::new(record) }))
+/// A live record of one player hitting once with a Great Hammer (weapon 9022).
+fn live_record(status: &str) -> CombatSnapshot {
+    let point = TimelinePoint {
+        second: 0,
+        damage: values(&[("a", 10.0)]),
+        healing: Values::new(),
+        weapon_damage: Some(values(&[("a:9022", 10.0)])),
+        weapon_healing: None,
+        item_damage: None,
+        item_healing: None,
+    };
+    CombatSnapshot {
+        id: "rec-1".into(),
+        started_at: meter_core::cs::DateTimeOffset::from_unix_milliseconds(meter_store::DateTimeOffset::parse("2026-11-20T10:00:00+00:00").unwrap().unix_microseconds() / 1000),
+        elapsed_seconds: 2.0,
+        status: status.into(),
+        mode: "live".into(),
+        sequence: 1,
+        event_count: 1,
+        total_damage: 10.0,
+        total_healing: 0.0,
+        members: vec![PlayerStats {
+            id: "a".into(),
+            name: "Alpha".into(),
+            weapon: "Great Hammer".into(),
+            weapon_family: "hammer".into(),
+            color: "#ffffff".into(),
+            damage: 10.0,
+            healing: 0.0,
+            encounter_dps: 5.0,
+            encounter_hps: 0.0,
+            rolling_dps: 5.0,
+            rolling_hps: 0.0,
+            damage_share: 100.0,
+            healing_share: 0.0,
+            membership: "active".into(),
+        }],
+        timeline: vec![Arc::new(point)],
+        full: true,
+        location: None,
+        former_members: None,
+        party_id: None,
+        weapon_contributions: Some(vec![WeaponContribution {
+            id: "a:9022".into(),
+            player_id: "a".into(),
+            player_name: "Alpha".into(),
+            weapon_index: Some(9022),
+            weapon: "Great Hammer".into(),
+            color: "#ffffff".into(),
+            damage: 10.0,
+            healing: 0.0,
+        }]),
+        item_contributions: None,
+    }
+}
+
+fn service(directory: &Path, site: &FakeSite, record: CombatSnapshot) -> AlbionLabService {
+    AlbionLabService::new(directory, Some(&site.address), Arc::new(Meter { record: Mutex::new(Arc::new(record)) }))
 }
 
 fn session(id: &str) -> LabSession {
@@ -200,7 +257,7 @@ async fn settings_changed_while_the_loop_reads_them_are_kept() {
     for _ in 0..50 {
         let directory = TempDir::new("settings-race");
         std::fs::write(directory.path().join("albionlab.json"), r#"{"deviceToken":"device","shareLocation":false,"visibility":"unlisted","anonymize":false}"#).unwrap();
-        let lab = service(directory.path(), &site, json!({}));
+        let lab = service(directory.path(), &site, live_record("idle"));
         let barrier = Arc::new(std::sync::Barrier::new(3));
         let threads: Vec<_> = (0..3)
             .map(|index| {
@@ -236,7 +293,7 @@ async fn a_visibility_change_answered_after_the_session_was_replaced_does_not_br
     let site = FakeSite::start(http, no_hub()).await;
     let directory = TempDir::new("patch");
     std::fs::write(directory.path().join("albionlab.json"), r#"{"deviceToken":"device"}"#).unwrap();
-    let lab = service(directory.path(), &site, json!({}));
+    let lab = service(directory.path(), &site, live_record("idle"));
     lab.set_session(Some(session("first")));
     let update = tokio::spawn({
         let lab = lab.clone();
@@ -374,7 +431,7 @@ async fn pairing_gets_a_code_and_then_the_device_token() {
     });
     let site = FakeSite::start(http, no_hub()).await;
     let directory = TempDir::new("pairing");
-    let lab = service(directory.path(), &site, json!({}));
+    let lab = service(directory.path(), &site, live_record("idle"));
     let status = lab.connect().await.unwrap();
     let pairing = status.pairing.unwrap();
     assert_eq!(pairing.verify_url, format!("{}/link?code=AB%2012", site.address));
@@ -394,7 +451,7 @@ async fn pairing_gets_a_code_and_then_the_device_token() {
 
 #[test]
 fn the_server_must_be_https_or_this_machine() {
-    let lab = |url: &str| AlbionLabService::new(Path::new("/nonexistent"), Some(url), Arc::new(Meter { record: Mutex::new(json!({})) })).server().to_owned();
+    let lab = |url: &str| AlbionLabService::new(Path::new("/nonexistent"), Some(url), Arc::new(Meter { record: Mutex::new(Arc::new(live_record("idle"))) })).server().to_owned();
     assert_eq!(lab("http://127.0.0.1:5000/"), "http://127.0.0.1:5000");
     assert_eq!(lab("https://staging.albionlab.app/path"), "https://staging.albionlab.app");
     assert_eq!(lab("http://albionlab.app"), "https://albionlab.app");
@@ -466,7 +523,7 @@ async fn an_icon_that_keeps_failing_is_never_downloaded_twice_at_once() {
         task.await.unwrap();
     }
     let total = downloads.lock().unwrap().get("T4_MAIN_SWORD").copied().unwrap_or_default();
-    assert!(total >= 3, "every size is tried: {total}");
+    assert_eq!(total, 3, "each size is tried once, then the failure is remembered: {total}");
     assert_eq!(overlap.1.load(Ordering::SeqCst), 0, "{} of {total} downloads overlapped another", overlap.1.load(Ordering::SeqCst));
     assert!(!directory.path().join("assets/weapon-icons/T4_MAIN_SWORD.png").exists());
 }

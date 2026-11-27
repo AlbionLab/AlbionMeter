@@ -155,6 +155,10 @@ impl<K: Hash + Eq + Clone, V, const LINEAR: usize> CsMap<K, V, LINEAR> {
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = (&K, &V)> + Clone {
         self.slots.iter().filter_map(|slot| slot.as_ref().map(|(key, value)| (key, value)))
     }
+    /// The entries by value, in the order `iter` gives them.
+    pub fn into_entries(self) -> impl Iterator<Item = (K, V)> {
+        self.slots.into_iter().flatten()
+    }
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (&K, &mut V)> {
         self.slots.iter_mut().filter_map(|slot| slot.as_mut().map(|(key, value)| (&*key, value)))
     }

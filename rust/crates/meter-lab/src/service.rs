@@ -10,6 +10,8 @@ use crate::protocol::{self, SessionDelta};
 use crate::signalr::{HubConnection, HubError, HubState};
 use meter_store::{json, paths, DateTimeOffset};
 use serde::{Deserialize, Serialize};
+use meter_core::engine::{CombatSnapshot, PlayerStats, Values};
+use meter_core::dungeon::DungeonRunSnapshot;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -19,12 +21,12 @@ use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
-/// What the service reads from the rest of the meter: the current record and dungeon runs (C# `CombatSnapshot` and
-/// `DungeonRunSnapshot` JSON until meter-core's types exist), the local character, and the game catalogs.
+/// What the service reads from the rest of the meter: the current record and dungeon runs, the local character, and
+/// the game catalogs. The record is read typed, shared, as the engine built it: no copy or JSON tree per second.
 pub trait LabContext: Send + Sync + 'static {
     /// The meter's current record.
-    fn record(&self) -> Value;
-    fn dungeons(&self) -> Vec<Value>;
+    fn record(&self) -> Arc<CombatSnapshot>;
+    fn dungeons(&self) -> Vec<Arc<DungeonRunSnapshot>>;
     /// The local character's id and map, when the capture knows them.
     fn character(&self) -> Option<(String, Option<String>)>;
     /// Unique item id (T6_2H_HAMMER@1) of an item index.
@@ -111,7 +113,10 @@ impl Settings {
         options.write(true).create(true).truncate(true);
         #[cfg(unix)]
         std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-        std::io::Write::write_all(&mut options.open(&temporary)?, text.as_bytes())?;
+        let mut file = options.open(&temporary)?;
+        std::io::Write::write_all(&mut file, text.as_bytes())?;
+        // On disk before the rename: a power cut must never leave an empty file (and the device token lost).
+        file.sync_all()?;
         std::fs::rename(&temporary, path)
     }
 }
@@ -178,6 +183,9 @@ struct State {
     // A failed create waits before the next try, longer each time, instead of asking the site every second.
     next_create: DateTimeOffset,
     failed_creates: u32,
+    // A hub that cannot connect is tried again after 5, 10, 20, 40 then every 60 seconds, not on every tick.
+    next_hub: DateTimeOffset,
+    failed_hubs: u32,
     // The "completed" of a session that could not be sent yet (hub reconnecting, network down); retried on each tick.
     pending_finish: Option<PendingFinish>,
     last_published: Option<Published>,
@@ -269,24 +277,16 @@ pub fn suggest_title(self_id: Option<&str>, record: &SourceSnapshot, runs: &[Sou
     Some(title.chars().take_while(|character| { units += character.len_utf16(); units <= 80 }).collect())
 }
 
+fn time(value: meter_core::cs::DateTimeOffset) -> DateTimeOffset {
+    DateTimeOffset::from_unix_milliseconds(value.0)
+}
+
+fn amounts(values: &Values) -> Vec<(String, f64)> {
+    values.iter().map(|(key, amount)| (key.to_string(), amount)).collect()
+}
+
 fn text(value: &Value, key: &str) -> String {
     value.get(key).and_then(Value::as_str).unwrap_or_default().to_owned()
-}
-
-fn started_at(value: &Value) -> DateTimeOffset {
-    value.get("startedAt").and_then(Value::as_str).and_then(DateTimeOffset::parse).unwrap_or_default()
-}
-
-fn amounts(value: Option<&Value>) -> Option<Vec<(String, f64)>> {
-    value?.as_object().map(|map| map.iter().map(|(key, amount)| (key.clone(), amount.as_f64().unwrap_or_default())).collect())
-}
-
-fn list<'a>(value: &'a Value, key: &str) -> &'a [Value] {
-    value.get(key).and_then(Value::as_array).map_or(&[], Vec::as_slice)
-}
-
-fn index(value: &Value, key: &str) -> Option<i32> {
-    value.get(key).and_then(Value::as_i64).map(|index| index as i32)
 }
 
 /// A weapon seen in combat for a player whose weapon was not observed: their most used main-hand item.
@@ -295,21 +295,20 @@ struct Fallback {
     index: Option<i32>,
 }
 
-fn combat_weapons(record: &Value) -> HashMap<String, Fallback> {
+fn combat_weapons(record: &CombatSnapshot) -> HashMap<String, Fallback> {
     let mut sums: Vec<(String, i64, String, f64, f64)> = Vec::new();
-    for item in list(record, "itemContributions") {
-        let index = item.get("itemIndex").and_then(Value::as_i64);
-        if text(item, "slot") != "mainhand" || !index.is_some_and(|index| index > 0) || item.get("tierObserved").and_then(Value::as_bool) != Some(true) {
+    for item in record.item_contributions.iter().flatten() {
+        let Some(index) = item.item_index.filter(|index| *index > 0) else { continue };
+        if item.slot != "mainhand" || !item.tier_observed {
             continue;
         }
-        let (player, index) = (text(item, "playerId"), index.unwrap_or_default());
-        let (damage, healing) = (item.get("damage").and_then(Value::as_f64).unwrap_or_default(), item.get("healing").and_then(Value::as_f64).unwrap_or_default());
-        match sums.iter_mut().find(|sum| sum.0 == player && sum.1 == index) {
+        let index = i64::from(index);
+        match sums.iter_mut().find(|sum| sum.0 == item.player_id && sum.1 == index) {
             Some(sum) => {
-                sum.3 += damage;
-                sum.4 += healing;
+                sum.3 += item.damage;
+                sum.4 += item.healing;
             }
-            None => sums.push((player, index, text(item, "item"), damage, healing)),
+            None => sums.push((item.player_id.clone(), index, item.item.clone(), item.damage, item.healing)),
         }
     }
     let mut best: Vec<(String, i64, String, f64, f64)> = Vec::new();
@@ -344,7 +343,9 @@ impl AlbionLabService {
     }
 
     fn save(&self, state: &State) {
-        let _ = state.settings.save(&self.inner.settings_path);
+        if let Err(error) = state.settings.save(&self.inner.settings_path) {
+            eprintln!("the AlbionLab settings could not be saved: {error}");
+        }
     }
 
     pub fn server(&self) -> &str {
@@ -536,8 +537,8 @@ impl AlbionLabService {
         let Some(token) = self.state().settings.device_token.clone() else { return Ok(()) };
         let context = self.inner.context.clone();
         let record = context.record();
-        let (id, status, started) = (text(&record, "id"), text(&record, "status"), started_at(&record));
-        let active = text(&record, "mode") == "live" && matches!(status.as_str(), "running" | "paused" | "completed");
+        let (id, status, started) = (record.id.clone(), record.status.clone(), time(record.started_at));
+        let active = record.mode == "live" && matches!(status.as_str(), "running" | "paused" | "completed");
         let current = {
             let state = self.state();
             (state.finished_record.clone(), state.record_id.clone())
@@ -552,7 +553,7 @@ impl AlbionLabService {
             if status == "completed" || DateTimeOffset::now() < self.state().next_create {
                 return Ok(());
             }
-            self.create_session(&token, &record, started).await?;
+            self.create_session(&token, &id, started).await?;
             if self.state().record_id.as_deref() != Some(id.as_str()) {
                 return Ok(());
             }
@@ -571,31 +572,25 @@ impl AlbionLabService {
         let self_id = character.as_ref().map(|(id, _)| id.clone());
         let share = self.state().settings.share_location;
         let earliest = started.utc_ticks - 5 * 10_000_000;
-        let runs: Vec<Value> = context.dungeons().into_iter().filter(|run| started_at(run).utc_ticks >= earliest).collect();
+        let runs: Vec<Arc<DungeonRunSnapshot>> = context.dungeons().into_iter().filter(|run| time(run.started_at).utc_ticks >= earliest).collect();
         let fallback = combat_weapons(&record);
-        let encounters: Vec<SourceSnapshot> = runs
-            .iter()
-            .flat_map(|run| list(run, "floors").iter().flat_map(|floor| list(floor, "encounters")))
-            .map(|encounter| self.source(encounter, &fallback))
-            .collect();
+        let encounters: Vec<SourceSnapshot> = runs.iter().flat_map(|run| run.floors.iter().flat_map(|floor| &floor.encounters)).map(|encounter| self.source(encounter, &fallback)).collect();
         let dungeons: Vec<SourceDungeon> = runs
             .iter()
             .map(|run| SourceDungeon {
-                id: text(run, "id"),
-                name: text(run, "name"),
-                started_at: started_at(run),
-                status: text(run, "status"),
-                entrance: share.then(|| text(run, "entranceMapName")),
-                floors: list(run, "floors")
+                id: run.id.clone(),
+                name: run.name.clone(),
+                started_at: time(run.started_at),
+                status: run.status.clone(),
+                entrance: share.then(|| run.entrance_map_name.clone()),
+                floors: run
+                    .floors
                     .iter()
-                    .map(|floor| {
-                        let number = index(floor, "number").unwrap_or_default();
-                        SourceFloor {
-                            id: format!("floor-{number}"),
-                            number,
-                            map: share.then(|| text(floor, "mapName")),
-                            snaps: list(floor, "encounters").iter().map(|encounter| text(encounter, "id")).collect(),
-                        }
+                    .map(|floor| SourceFloor {
+                        id: format!("floor-{}", floor.number),
+                        number: floor.number,
+                        map: share.then(|| floor.map_name.clone()),
+                        snaps: floor.encounters.iter().map(|encounter| encounter.id.clone()).collect(),
                     })
                     .collect(),
             })
@@ -699,7 +694,7 @@ impl AlbionLabService {
         Ok(())
     }
 
-    async fn create_session(&self, token: &str, record: &Value, started: DateTimeOffset) -> LabResult<()> {
+    async fn create_session(&self, token: &str, record_id: &str, started: DateTimeOffset) -> LabResult<()> {
         let (visibility, anonymize) = {
             let state = self.state();
             (state.settings.visibility.clone(), state.settings.anonymize)
@@ -731,7 +726,7 @@ impl AlbionLabService {
         }
         let body = body.ok_or_else(|| LabError::Http("AlbionLab answered without a session.".into()))?;
         let mut state = self.state();
-        state.record_id = Some(text(record, "id"));
+        state.record_id = Some(record_id.to_owned());
         state.failed_creates = 0;
         state.next_create = DateTimeOffset::default();
         state.compactor = SessionCompactor::new();
@@ -770,67 +765,87 @@ impl AlbionLabService {
             state.hub.clone().expect("created above")
         };
         if connection.state() == HubState::Disconnected {
+            if DateTimeOffset::now() < self.state().next_hub {
+                return Ok(None);
+            }
             match connection.start().await {
-                Ok(()) => self.state().compactor.reset(),
+                Ok(()) => {
+                    let mut state = self.state();
+                    state.compactor.reset();
+                    state.failed_hubs = 0;
+                }
                 Err(HubError::Unauthorized) => {
                     self.disconnect().await;
                     self.state().pairing_error = Some("revoked".into());
                     return Ok(None);
                 }
-                Err(error) => return Err(error.into()),
+                Err(error) => {
+                    let mut state = self.state();
+                    state.failed_hubs += 1;
+                    let wait = (5i64 << (state.failed_hubs - 1).min(4)).min(60);
+                    let now = DateTimeOffset::now();
+                    state.next_hub = DateTimeOffset { utc_ticks: now.utc_ticks + wait * 10_000_000, ..now };
+                    return Err(error.into());
+                }
             }
         }
         Ok((connection.state() == HubState::Connected).then_some(connection))
     }
 
-    fn source(&self, snapshot: &Value, fallback: &HashMap<String, Fallback>) -> SourceSnapshot {
+    fn source(&self, snapshot: &CombatSnapshot, fallback: &HashMap<String, Fallback>) -> SourceSnapshot {
         let context = &self.inner.context;
-        let members = list(snapshot, "members")
+        let members = snapshot
+            .members
             .iter()
-            .map(|player| self.member(player, &text(player, "membership"), fallback))
-            .chain(list(snapshot, "formerMembers").iter().map(|player| self.member(player, "left", fallback)))
+            .map(|player| self.member(player, &player.membership, fallback))
+            .chain(snapshot.former_members.iter().flatten().map(|player| self.member(player, "left", fallback)))
             .collect();
-        let weapons = list(snapshot, "weaponContributions")
+        let weapons = snapshot
+            .weapon_contributions
             .iter()
-            .map(|weapon| {
-                let index = index(weapon, "weaponIndex");
-                SourceWeapon { id: text(weapon, "id"), player_id: text(weapon, "playerId"), index, name: text(weapon, "weapon"), unique_id: index.and_then(|index| context.item_id(index)) }
+            .flatten()
+            .map(|weapon| SourceWeapon {
+                id: weapon.id.clone(),
+                player_id: weapon.player_id.clone(),
+                index: weapon.weapon_index,
+                name: weapon.weapon.clone(),
+                unique_id: weapon.weapon_index.and_then(|index| context.item_id(index)),
             })
             .collect();
-        let items = list(snapshot, "itemContributions")
+        let items = snapshot
+            .item_contributions
             .iter()
-            .map(|item| {
-                let index = index(item, "itemIndex");
-                SourceItem {
-                    id: text(item, "id"),
-                    player_id: text(item, "playerId"),
-                    slot: text(item, "slot"),
-                    index,
-                    name: text(item, "item"),
-                    kind: text(item, "kind"),
-                    tier_observed: item.get("tierObserved").and_then(Value::as_bool).unwrap_or_default(),
-                    unique_id: index.and_then(|index| context.item_id(index)),
-                }
+            .flatten()
+            .map(|item| SourceItem {
+                id: item.id.clone(),
+                player_id: item.player_id.clone(),
+                slot: item.slot.clone(),
+                index: item.item_index,
+                name: item.item.clone(),
+                kind: item.kind.clone(),
+                tier_observed: item.tier_observed,
+                unique_id: item.item_index.and_then(|index| context.item_id(index)),
             })
             .collect();
-        let timeline = list(snapshot, "timeline")
+        let timeline = snapshot
+            .timeline
             .iter()
             .map(|point| SourceSecond {
-                second: index(point, "second").unwrap_or_default(),
-                damage: amounts(point.get("damage")).unwrap_or_default(),
-                healing: amounts(point.get("healing")).unwrap_or_default(),
-                weapon_damage: amounts(point.get("weaponDamage")),
-                weapon_healing: amounts(point.get("weaponHealing")),
-                item_damage: amounts(point.get("itemDamage")),
-                item_healing: amounts(point.get("itemHealing")),
+                second: point.second,
+                damage: amounts(&point.damage),
+                healing: amounts(&point.healing),
+                weapon_damage: point.weapon_damage.as_ref().map(amounts),
+                weapon_healing: point.weapon_healing.as_ref().map(amounts),
+                item_damage: point.item_damage.as_ref().map(amounts),
+                item_healing: point.item_healing.as_ref().map(amounts),
             })
             .collect();
         SourceSnapshot {
-            id: text(snapshot, "id"),
-            started_at: started_at(snapshot),
-            elapsed: snapshot.get("elapsedSeconds").and_then(Value::as_f64).unwrap_or_default(),
-            status: text(snapshot, "status"),
-            events: snapshot.get("eventCount").and_then(Value::as_i64).unwrap_or_default(),
+            id: snapshot.id.clone(),
+            started_at: time(snapshot.started_at),
+            elapsed: snapshot.elapsed_seconds,
+            status: snapshot.status.clone(),
+            events: snapshot.event_count,
             members,
             weapons,
             items,
@@ -838,23 +853,22 @@ impl AlbionLabService {
         }
     }
 
-    fn member(&self, player: &Value, membership: &str, fallback: &HashMap<String, Fallback>) -> SourceMember {
+    fn member(&self, player: &PlayerStats, membership: &str, fallback: &HashMap<String, Fallback>) -> SourceMember {
         let context = &self.inner.context;
-        let (id, weapon, family) = (text(player, "id"), text(player, "weapon"), text(player, "weaponFamily"));
-        let seen = if weapon == "Weapon not observed" { fallback.get(&id) } else { None };
-        let label = seen.map_or(weapon, |seen| seen.item.clone());
+        let seen = if player.weapon == "Weapon not observed" { fallback.get(&player.id) } else { None };
+        let label = seen.map_or_else(|| player.weapon.clone(), |seen| seen.item.clone());
         // A weapon identified from the abilities used still has a family; the site marks it as seen in combat by itself.
         let family = match seen {
-            Some(seen) => seen.index.and_then(|index| context.weapon_family(index)).unwrap_or(family),
-            None => family,
+            Some(seen) => seen.index.and_then(|index| context.weapon_family(index)).unwrap_or_else(|| player.weapon_family.clone()),
+            None => player.weapon_family.clone(),
         };
         SourceMember {
             weapon_id: context.item_id_by_name(&label),
-            id,
-            name: text(player, "name"),
+            id: player.id.clone(),
+            name: player.name.clone(),
             weapon: label,
             family,
-            color: text(player, "color"),
+            color: player.color.clone(),
             membership: if matches!(membership, "left" | "unconfirmed") { membership.into() } else { "active".into() },
         }
     }

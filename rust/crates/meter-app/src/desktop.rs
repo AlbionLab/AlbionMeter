@@ -160,12 +160,47 @@ thread_local! {
     pub static PICKER: std::cell::Cell<Option<Picker>> = const { std::cell::Cell::new(None) };
 }
 
-/// A native file or folder picker through the desktop's own dialog tool (zenity or kdialog on Linux). The Windows and
-/// macOS pickers come with the integration phase.
-pub fn pick(folder: bool, title: &str, filters: &[&str]) -> Option<PathBuf> {
+/// A native file or folder picker: the system dialog on Windows and macOS, the desktop's own dialog tool (zenity or
+/// kdialog) on Linux. `filters` are glob patterns (`*.zip`).
+///
+/// The Linux tool is a separate program the meter would otherwise wait on: it runs on its own thread, this returns None
+/// at once and `then` gets the choice on the UI thread later, so the meter keeps drawing the fight while the dialog is
+/// open. The Windows and macOS dialogs are the system's own modal loops and must run on the UI thread: their choice
+/// (and a test picker's) is returned for the caller to pass to `then` itself.
+pub fn pick(folder: bool, title: &str, filters: &[&str], then: fn(&mut crate::controller::Controller, PathBuf)) -> Option<PathBuf> {
     if let Some(picker) = PICKER.with(std::cell::Cell::get) {
         return picker(folder, title, filters);
     }
+    #[cfg(any(windows, target_os = "macos"))]
+    {
+        let _ = then;
+        native_pick(folder, title, filters)
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        let (title, filters) = (title.to_owned(), filters.iter().map(|filter| (*filter).to_owned()).collect::<Vec<_>>());
+        let _ = std::thread::Builder::new().name("file-picker".into()).spawn(move || {
+            let filters: Vec<&str> = filters.iter().map(String::as_str).collect();
+            if let Some(path) = native_pick(folder, &title, &filters) {
+                let _ = slint::invoke_from_event_loop(move || crate::controller::with_controller(|controller| then(controller, path)));
+            }
+        });
+        None
+    }
+}
+
+#[cfg(any(windows, target_os = "macos"))]
+fn native_pick(folder: bool, title: &str, filters: &[&str]) -> Option<PathBuf> {
+    let dialog = rfd::FileDialog::new().set_title(title);
+    if folder {
+        return dialog.pick_folder();
+    }
+    let extensions: Vec<&str> = filters.iter().map(|filter| filter.trim_start_matches("*.")).collect();
+    if extensions.is_empty() { dialog.pick_file() } else { dialog.add_filter(title, &extensions).pick_file() }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn native_pick(folder: bool, title: &str, filters: &[&str]) -> Option<PathBuf> {
     let attempts: Vec<(&str, Vec<String>)> = vec![
         (
             "zenity",

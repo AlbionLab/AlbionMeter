@@ -13,6 +13,8 @@ const SIZES: [&str; 3] = ["?size=128", "", "?size=64"];
 const MAX_BYTES: usize = 256_000;
 const PNG: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
 const TIMEOUT: Duration = Duration::from_secs(8);
+/// An icon that could not be downloaded is not asked for again before this (offline, every view would retry it).
+const RETRY_AFTER: Duration = Duration::from_secs(600);
 
 pub type Icon = Arc<Vec<u8>>;
 type Pending = Arc<OnceCell<Option<Icon>>>;
@@ -23,6 +25,7 @@ pub struct WeaponIconCache {
     http: reqwest::Client,
     known: Box<dyn Fn(&str) -> bool + Send + Sync>,
     pending: Mutex<HashMap<String, Pending>>,
+    failed: Mutex<HashMap<String, std::time::Instant>>,
 }
 
 impl WeaponIconCache {
@@ -38,6 +41,7 @@ impl WeaponIconCache {
             http: reqwest::Client::builder().timeout(TIMEOUT).build().expect("HTTP client"),
             known: Box::new(known),
             pending: Mutex::default(),
+            failed: Mutex::default(),
         }
     }
 
@@ -45,8 +49,19 @@ impl WeaponIconCache {
         if id.len() > 150 || !id.chars().all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '@') || !(self.known)(id) {
             return None;
         }
+        if self.failed.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get(id).is_some_and(|at| at.elapsed() < RETRY_AFTER) {
+            return None;
+        }
         let request = self.pending.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).entry(id.to_owned()).or_default().clone();
         let icon = request.get_or_init(|| self.load(id)).await.clone();
+        {
+            let mut failed = self.failed.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            if icon.is_none() {
+                failed.insert(id.to_owned(), std::time::Instant::now());
+            } else {
+                failed.remove(id);
+            }
+        }
         // Only this request's entry: a newer download of the same icon keeps its own.
         let mut pending = self.pending.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         if pending.get(id).is_some_and(|current| Arc::ptr_eq(current, &request)) {

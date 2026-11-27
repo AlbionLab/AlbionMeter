@@ -1535,6 +1535,8 @@ impl CapturedCombatObservation {
             .map(|entry| (entry.serial, entry.actor.clone(), entry.effect.clone(), entry.key.clone(), entry.visit))
             .collect();
         let mut credited = 0;
+        // Removed together after the loop (crediting never queues a new entry): one pass instead of one per entry.
+        let mut settled = std::collections::HashSet::new();
         for (serial, actor, effect, key, visit) in judged {
             let latest = match self.characters.get(&actor.id.unwrap()) {
                 Some(known) if known.gear_seen >= actor.gear_seen => Entity {
@@ -1550,11 +1552,14 @@ impl CapturedCombatObservation {
             let key = if visit == self.visit { key } else { None };
             if self.credit(latest, effect, key) {
                 credited += 1;
-                self.awaiting_roster.retain(|entry| entry.serial != serial);
+                settled.insert(serial);
             } else if final_ {
                 self.count("outsideParty", 1);
-                self.awaiting_roster.retain(|entry| entry.serial != serial);
+                settled.insert(serial);
             }
+        }
+        if !settled.is_empty() {
+            self.awaiting_roster.retain(|entry| !settled.contains(&entry.serial));
         }
         self.count("creditedAfterRoster", credited);
         self.synchronize();
@@ -2122,8 +2127,9 @@ impl CapturedCombatObservation {
         }
         let possible = self.possible_identities();
         if self.engine.is_some() {
-            let unresolved: Vec<(Key, Vec<Pending>)> = self.unresolved.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-            for (key, effects) in unresolved {
+            // Moved out rather than copied: the loop does not read it, and clear_unidentified empties it after.
+            let unresolved = std::mem::take(&mut self.unresolved);
+            for (key, effects) in unresolved.into_entries() {
                 let party_member = self.party_objects.contains_key(&key);
                 if !party_member || effects.is_empty() {
                     if !effects.is_empty() {

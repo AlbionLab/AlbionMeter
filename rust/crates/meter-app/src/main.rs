@@ -19,6 +19,7 @@ mod headless;
 mod instance;
 mod i18n;
 mod journal;
+mod mailbox;
 mod merge;
 mod ranking;
 mod ranking_image;
@@ -231,17 +232,11 @@ fn main() -> Result<(), slint::PlatformError> {
             }
             None => Box::new(fake::FakeFeed { update: options.update || options.screenshots.is_some(), autostart: !options.idle }),
         };
+        let mailbox = std::sync::Arc::new(mailbox::Mailbox::default());
         feed_thread = Some(
             std::thread::Builder::new()
                 .name("feed".into())
-                .spawn(move || {
-                    feed.run(
-                        Box::new(|event| {
-                            let _ = slint::invoke_from_event_loop(move || controller::dispatch(event));
-                        }),
-                        received,
-                    )
-                })
+                .spawn(move || feed.run(Box::new(move |event| mailbox.post(event, controller::dispatch)), received))
                 .expect("the feed thread starts"),
         );
     }

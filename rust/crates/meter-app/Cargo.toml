@@ -13,8 +13,8 @@ slint = { version = "1.19", default-features = false, features = ["std", "compat
 i-slint-backend-testing = { version = "=1.19.1", optional = true }
 # The ranking picture on the clipboard (Slint's clipboard is text only).
 arboard = { version = "3.6", default-features = false, features = ["image-data", "wayland-data-control"] }
-# Updates and installers (Setup.exe, AppImage), as electron-updater did; the feed is AlbionMeter's GitHub releases on
-# the `rust-beta` channel.
+# Updates and installers (Setup.exe, AppImage), as electron-updater did; the feed is the `rust-latest` GitHub release
+# (one channel per system: rust-win, rust-linux).
 velopack = { version = "1.2.161", default-features = false }
 # The AlbionLab account picture (Discord's PNG or JPEG); Slint already builds the image crate with these decoders.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
@@ -30,6 +30,10 @@ serde_json = { workspace = true, features = ["preserve_order"] }
 [target.'cfg(windows)'.dependencies]
 slint = { version = "1.19", default-features = false, features = ["renderer-femtovg"] }
 meter-capture.workspace = true
+
+# The system's own file and folder pickers (IFileDialog, NSOpenPanel); Linux asks zenity or kdialog instead.
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+rfd = { version = "0.18", default-features = false }
 
 [features]
 parity = ["dep:i-slint-backend-testing"]

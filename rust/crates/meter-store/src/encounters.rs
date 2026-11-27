@@ -105,6 +105,9 @@ impl DungeonSummary {
 /// in them later. One connection, used from one thread at a time.
 pub struct EncounterStore {
     connection: Mutex<Connection>,
+    /// The id and JSON length of the last typed save: a live record is saved again and again, a little longer each
+    /// time, so its next text is allocated at about its size at once.
+    last_size: Mutex<(String, usize)>,
     pub(crate) written: Mutex<Written>,
     database_path: PathBuf,
 }
@@ -123,7 +126,7 @@ impl EncounterStore {
         if !debug {
             connection.execute_batch("DROP TABLE IF EXISTS packets; DELETE FROM identity_timeline")?;
         }
-        Ok(Self { connection: Mutex::new(connection), written: Mutex::default(), database_path })
+        Ok(Self { connection: Mutex::new(connection), last_size: Mutex::default(), written: Mutex::default(), database_path })
     }
 
     pub fn database_path(&self) -> &Path {
@@ -135,6 +138,9 @@ impl EncounterStore {
     }
 
     /// Saves a finished or live encounter as completed; one without events only when `allow_empty`.
+    ///
+    /// This goes through a `serde_json::Value` (to read the summary and mark it completed). For a typed snapshot,
+    /// [`save_encounter`](Self::save_encounter) writes it straight to its JSON text instead.
     pub fn save(&self, snapshot: &impl Serialize, allow_empty: bool) -> Result<()> {
         let mut snapshot = serde_json::to_value(snapshot)?;
         if number(&snapshot, "eventCount") == 0.0 && !allow_empty {
@@ -143,11 +149,40 @@ impl EncounterStore {
         set(&mut snapshot, "status", "completed".into());
         set(&mut snapshot, "full", true.into());
         let summary = EncounterSummary::of(&snapshot)?;
+        self.write_encounter(&summary, &json::to_string(&snapshot)?)
+    }
+
+    /// Saves a typed (or `Arc`) encounter snapshot by serializing it directly to its JSON text, with no
+    /// `serde_json::Value` in between. The snapshot must already be what C# saves, `snapshot with { Status =
+    /// "completed", Full = true }`, and `summary` must be its [`EncounterSummary`]; `event_count` is its
+    /// `eventCount` (nothing is saved at 0 unless `allow_empty`).
+    pub fn save_encounter(&self, snapshot: &(impl Serialize + ?Sized), summary: &EncounterSummary, event_count: i64, allow_empty: bool) -> Result<()> {
+        if event_count == 0 && !allow_empty {
+            return Ok(());
+        }
+        let capacity = {
+            let last = self.last_size.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            if last.0 == summary.id { last.1 + last.1 / 16 + 4096 } else { 128 }
+        };
+        let text = json::to_string_with_capacity(snapshot, capacity)?;
+        *self.last_size.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = (summary.id.clone(), text.len());
+        self.write_encounter(summary, &text)
+    }
+
+    /// [`save_encounter`](Self::save_encounter) for a snapshot already written with [`json::to_string`].
+    pub fn save_encounter_json(&self, snapshot: &str, summary: &EncounterSummary, event_count: i64, allow_empty: bool) -> Result<()> {
+        if event_count == 0 && !allow_empty {
+            return Ok(());
+        }
+        self.write_encounter(summary, snapshot)
+    }
+
+    fn write_encounter(&self, summary: &EncounterSummary, snapshot: &str) -> Result<()> {
         let mut connection = self.connection();
         let transaction = connection.transaction()?;
         transaction.execute(
             "INSERT OR REPLACE INTO encounters VALUES ($id, $date, $summary, $snapshot)",
-            params![summary.id, summary.started_at.to_round_trip(), json::to_string(&summary)?, json::to_string(&snapshot)?],
+            params![summary.id, summary.started_at.to_round_trip(), json::to_string(summary)?, snapshot],
         )?;
         crate::identity::reapply(&transaction, &summary.id)?;
         transaction.execute(
@@ -167,17 +202,39 @@ impl EncounterStore {
         Ok(self.connection().query_row("SELECT snapshot FROM encounters WHERE id = $id", [id], |row| row.get(0)).optional()?)
     }
 
+    /// Saves a dungeon run; one whose totals have no events only when `allow_empty`. Goes through a
+    /// `serde_json::Value`; [`save_dungeon_run`](Self::save_dungeon_run) is the typed path.
     pub fn save_dungeon(&self, run: &impl Serialize, allow_empty: bool) -> Result<()> {
         let run = serde_json::to_value(run)?;
         if number(run.get("totals").unwrap_or(&Value::Null), "eventCount") == 0.0 && !allow_empty {
             return Ok(());
         }
-        let summary = DungeonSummary::of(&run)?;
+        self.write_dungeon(&DungeonSummary::of(&run)?, &json::to_string(&run)?)
+    }
+
+    /// Saves a typed (or `Arc`) dungeon run by serializing it directly to its JSON text. `summary` must be its
+    /// [`DungeonSummary`] and `event_count` its totals' `eventCount`.
+    pub fn save_dungeon_run(&self, run: &(impl Serialize + ?Sized), summary: &DungeonSummary, event_count: i64, allow_empty: bool) -> Result<()> {
+        if event_count == 0 && !allow_empty {
+            return Ok(());
+        }
+        self.write_dungeon(summary, &json::to_string(run)?)
+    }
+
+    /// [`save_dungeon_run`](Self::save_dungeon_run) for a run already written with [`json::to_string`].
+    pub fn save_dungeon_json(&self, run: &str, summary: &DungeonSummary, event_count: i64, allow_empty: bool) -> Result<()> {
+        if event_count == 0 && !allow_empty {
+            return Ok(());
+        }
+        self.write_dungeon(summary, run)
+    }
+
+    fn write_dungeon(&self, summary: &DungeonSummary, run: &str) -> Result<()> {
         let mut connection = self.connection();
         let transaction = connection.transaction()?;
         transaction.execute(
             "INSERT OR REPLACE INTO dungeon_runs VALUES ($id, $date, $summary, $snapshot)",
-            params![summary.id, summary.started_at.to_round_trip(), json::to_string(&summary)?, json::to_string(&run)?],
+            params![summary.id, summary.started_at.to_round_trip(), json::to_string(summary)?, run],
         )?;
         transaction.execute(&format!("DELETE FROM dungeon_runs WHERE id NOT IN (SELECT id FROM dungeon_runs ORDER BY started_at DESC LIMIT {RETAINED_DUNGEONS})"), [])?;
         transaction.commit()?;

@@ -2958,6 +2958,7 @@ dependencies = [
 name = "meter-store"
 version = "0.2.0"
 dependencies = [
+ "meter-core",
  "rusqlite",
  "serde",
  "serde_json",

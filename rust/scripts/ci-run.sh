@@ -11,6 +11,11 @@ import re, sys
 text = open(sys.argv[1], encoding='utf-8', errors='replace').read()
 text = re.sub(r'\x1b\[[0-9;]*m', '', text)
 blocks = re.findall(r'^(?:error(?:\[E\d+\])?:.*?|thread .* panicked at .*?|---- .* stdout ----.*?)(?=^\s*$)', text, re.M | re.S)
+# A crash (stack overflow, access violation) prints no panic: the tests that were running and the runtime's message.
+crash = [line for line in text.splitlines() if re.search(r'overflowed its stack|fatal runtime error|STATUS_|exit code|signal:|test .* has been running', line)]
+running = [line for line in text.splitlines() if re.match(r'^test \S+ \.\.\. ?$', line) or line.startswith('     Running ')]
+if crash:
+    blocks.insert(0, '\n'.join(crash[-15:] + ['last started:'] + running[-12:]))
 if not blocks:
     blocks = [text[-6000:]]
 for block in blocks[:10]:

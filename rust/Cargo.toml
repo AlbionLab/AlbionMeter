@@ -20,4 +20,7 @@ lto = "fat"
 codegen-units = 1
 panic = "abort"
 strip = true
-opt-level = 3
+# Built for size: "s" keeps the meter under its 20 MB budget (28 MB at 3). Decoding costs the same (the replay of a
+# 30-minute raid takes 1.26 s either way); drawing a 4 Hz fight costs ~1 point more of one core in a 1256×1374 window
+# and stays under the 5 % gate at the default 1280×820. "z" was tried and doubles the drawing cost.
+opt-level = "s"

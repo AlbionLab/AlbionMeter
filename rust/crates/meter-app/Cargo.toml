@@ -6,7 +6,7 @@ edition.workspace = true
 [dependencies]
 # winit + femtovg (OpenGL) with the software renderer as the fallback for machines without a usable GPU driver; no Qt,
 # no Skia, no accessibility bridge, no system tray: they would double the binary.
-slint = { version = "1.19", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg", "renderer-software", "software-renderer-path", "unstable-winit-030"] }
+slint = { version = "1.19", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-software", "software-renderer-path", "unstable-winit-030"] }
 
 # Finds a control by its accessible label to hover it in fixture screenshots (feature `parity`, used by
 # rust/scripts/ui-parity.mjs); the UI tests use it to click.
@@ -22,8 +22,11 @@ serde.workspace = true
 # Object keys keep the server's order (the diagnostics are listed in it).
 serde_json = { workspace = true, features = ["preserve_order"] }
 
-# Windows: the UAC restart for raw-socket capture (meter_capture::elevation).
+# Windows: the UAC restart for raw-socket capture (meter_capture::elevation), and the OpenGL renderer (femtovg) as an
+# option next to the software one. Linux leaves femtovg out: there it maps the GL driver (~75 MB) for no gain at 4 Hz,
+# and it is 0.7 MB of the binary.
 [target.'cfg(windows)'.dependencies]
+slint = { version = "1.19", default-features = false, features = ["renderer-femtovg"] }
 meter-capture.workspace = true
 
 [features]

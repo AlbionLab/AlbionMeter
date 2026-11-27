@@ -53,6 +53,9 @@ jobs:
       # Each check runs even when an earlier one failed, so one run shows every problem.
       - name: Tests
         if: success() || failure()
+        # Test threads get 8 MB of stack (2 MB by default): Slint's UI tests build the whole window in a debug build.
+        env:
+          RUST_MIN_STACK: 8388608
         run: scripts/ci-run.sh cargo test --workspace
       - name: Release build
         if: success() || failure()

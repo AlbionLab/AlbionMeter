@@ -25,6 +25,8 @@ jobs:
             exe: meter-app
           - os: windows-latest
             exe: meter-app.exe
+            # One test at a time: libtest names each test before it runs, so a crash (no panic, no output) names its test.
+            test_args: -- --test-threads=1
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -56,7 +58,7 @@ jobs:
         # Test threads get 8 MB of stack (2 MB by default): Slint's UI tests build the whole window in a debug build.
         env:
           RUST_MIN_STACK: 8388608
-        run: scripts/ci-run.sh cargo test --workspace
+        run: scripts/ci-run.sh cargo test --workspace ${{ matrix.test_args }}
       - name: Release build
         if: success() || failure()
         id: release

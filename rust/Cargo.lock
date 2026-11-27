@@ -2945,6 +2945,7 @@ version = "0.2.0"
 dependencies = [
  "arboard",
  "i-slint-backend-testing",
+ "meter-capture",
  "meter-core",
  "meter-runtime",
  "serde",

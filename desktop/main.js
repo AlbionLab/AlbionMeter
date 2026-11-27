@@ -1,9 +1,10 @@
-const { app, BrowserWindow, Menu, ipcMain, screen, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, net, screen, session, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { spawn, execFile } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
+const os = require('node:os');
 
 const origin = 'http://127.0.0.1:5187';
 const checkEvery = 6 * 60 * 60 * 1000;
@@ -375,10 +376,105 @@ async function reveal() {
   if (splashWindow && !splashWindow.isDestroyed()) splashWindow.destroy();
 }
 
+// The Rust meter replaces this one. Its newest version is published with the rest of the releases, and its update
+// feed (Velopack's releases.<channel>.json) always sits on the rust-latest release. While that feed exists, the update
+// this meter offers is the Rust meter itself, shown and installed like any other update: downloaded with its progress,
+// "ready", then installed when the player restarts from the toast. Installed, it opens instead of this meter from then
+// on, and it reads the same history and settings.
+const rustFeed = 'https://github.com/AlbionLab/AlbionMeter/releases/download/rust-latest';
+const rustPackage = { win32: { channel: 'rust-win', file: 'AlbionLab.AlbionMeter-rust-win-Setup.exe' }, linux: { channel: 'rust-linux', file: 'AlbionLab.AlbionMeter-rust-linux.AppImage' } }[process.platform];
+let migration = null;
+
+/** Where the installed Rust meter is: Velopack's install on Windows, the AppImage that took this one's place (or was put next to it) on Linux. */
+function rustMeter() {
+  const saved = readSettings().rustMeter;
+  if (saved && fs.existsSync(saved)) return saved;
+  if (process.platform === 'win32' && process.env.LOCALAPPDATA) {
+    const installed = path.join(process.env.LOCALAPPDATA, 'AlbionLab.AlbionMeter', 'current', 'meter-app.exe');
+    if (fs.existsSync(installed)) return installed;
+  }
+  return null;
+}
+
+/** The Rust meter's newest version, or null when there is none to move to (no feed yet, offline). */
+async function rustVersion() {
+  if (!rustPackage) return null;
+  try {
+    const response = await net.fetch(`${rustFeed}/releases.${rustPackage.channel}.json`, { cache: 'no-store' });
+    if (!response.ok) return null;
+    const feed = await response.json();
+    const versions = (feed.Assets ?? []).filter(asset => asset.Type === 'Full').map(asset => asset.Version).filter(Boolean);
+    return versions.sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).pop() ?? null;
+  } catch (error) {
+    log(`Rust meter feed unavailable: ${error.message}`);
+    return null;
+  }
+}
+
+/** Downloads the Rust meter's installer (Windows) or AppImage (Linux), showing the progress like an update. */
+async function downloadRust(version) {
+  setUpdate({ state: 'downloading', version, percent: 0 });
+  const response = await net.fetch(`${rustFeed}/${rustPackage.file}`, { cache: 'no-store' });
+  if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
+  const total = Number(response.headers.get('content-length')) || undefined;
+  const target = path.join(os.tmpdir(), `${rustPackage.file}.${process.pid}`);
+  const file = fs.createWriteStream(target, { mode: 0o755 });
+  let transferred = 0;
+  let shown = -1;
+  try {
+    for await (const chunk of response.body) {
+      transferred += chunk.length;
+      if (!file.write(chunk)) await new Promise(resolve => file.once('drain', resolve));
+      const percent = total ? Math.floor(transferred / total * 100) : 0;
+      if (percent !== shown) { shown = percent; setUpdate({ state: 'downloading', version, percent, transferred, total }); }
+    }
+  } finally {
+    await new Promise(resolve => file.end(resolve));
+  }
+  if (total && transferred !== total) throw new Error('incomplete download');
+  migration = { version, file: target };
+  setUpdate({ state: 'ready', version });
+}
+
+/** Installs the downloaded Rust meter and opens it; this meter's service is already stopped. Returns false on failure. */
+function installRust() {
+  try {
+    if (process.platform === 'win32') {
+      // Velopack's Setup.exe installs into %LocalAppData%\AlbionLab.AlbionMeter and starts the meter itself.
+      spawn(migration.file, [], { detached: true, stdio: 'ignore', windowsHide: false }).unref();
+    } else {
+      // The AppImage takes this one's place, so the launcher and the menu entry open the Rust meter from now on; a
+      // meter installed as a package gets the AppImage in ~/Applications instead.
+      const target = process.env.APPIMAGE || path.join(os.homedir(), 'Applications', 'AlbionMeter.AppImage');
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.copyFileSync(migration.file, `${target}.new`);
+      fs.chmodSync(`${target}.new`, 0o755);
+      fs.renameSync(`${target}.new`, target);
+      writeSettings({ rustMeter: target });
+      spawn(target, [], { detached: true, stdio: 'ignore', env: { ...process.env, APPIMAGE: target } }).unref();
+    }
+    return true;
+  } catch (error) {
+    log(`the Rust meter could not be installed: ${error.message}`);
+    return false;
+  }
+}
+
 let watching = false;
-function watchUpdates() {
+async function watchUpdates() {
   if (!app.isPackaged || watching) return;
   watching = true;
+  const version = await rustVersion();
+  if (version) {
+    try { return await downloadRust(version); }
+    catch (error) {
+      log(`Rust meter download failed: ${error.message}`);
+      setUpdate({ state: 'error', message: tr('The update could not be downloaded. It will be tried again later.') });
+      watching = false;
+      setTimeout(watchUpdates, 30 * 60 * 1000);
+      return;
+    }
+  }
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.on('checking-for-update', () => { if (update.state !== 'ready') setUpdate({ state: 'checking' }); });
@@ -444,11 +540,15 @@ ipcMain.handle('desktop:permission', () => {
 });
 
 ipcMain.on('desktop:update', async (_event, action) => {
-  if (action === 'check') autoUpdater.checkForUpdates().catch(error => log(`update check failed: ${error?.message ?? error}`));
+  if (action === 'check' && !migration) autoUpdater.checkForUpdates().catch(error => log(`update check failed: ${error?.message ?? error}`));
   if (action !== 'install' || update.state !== 'ready') return;
   setUpdate({ ...update, state: 'installing' });
   leaving = true;
   await stopServer();
+  if (migration) {
+    if (installRust()) { app.exit(0); return; }
+    return installFailed();
+  }
   autoUpdater.quitAndInstall(true, true);
   // Still running long after asking to install (a cancelled password prompt, a package manager error): bring the
   // service back on this version instead of leaving the window without it.
@@ -473,6 +573,13 @@ if (!app.requestSingleInstanceLock()) {
     target.focus();
   });
   app.whenReady().then(async () => {
+    // Moved to the Rust meter: that one opens instead (old shortcuts and autostart entries still point here).
+    const rust = app.isPackaged ? rustMeter() : null;
+    if (rust) {
+      spawn(rust, [], { detached: true, stdio: 'ignore' }).unref();
+      app.exit(0);
+      return;
+    }
     Menu.setApplicationMenu(null);
     await createSplash();
     await boot();

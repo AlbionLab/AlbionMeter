@@ -91,6 +91,33 @@ jobs:
         if: success() || failure()
         id: release
         run: scripts/ci-run.sh cargo build --release -p meter-app
+      # Which DLL each executable takes WaitOnAddress from, and anything it imports from vertdll (the enclave runtime).
+      - name: Imports
+        if: (success() || failure()) && runner.os == 'Windows'
+        run: |
+          python3 -m pip install -q pefile
+          test=$(cargo test -p meter-app --bin meter-app --no-run --message-format=json 2>/dev/null | python3 -c "
+          import json, sys
+          for line in sys.stdin:
+              message = json.loads(line)
+              if message.get('reason') == 'compiler-artifact' and message.get('executable') and message['profile']['test']:
+                  print(message['executable'])" | tail -1)
+          python3 -c "
+          import pefile, sys
+          for path in sys.argv[1:]:
+              if not path:
+                  continue
+              pe = pefile.PE(path, fast_load=True)
+              pe.parse_data_directories(directories=[pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_IMPORT'], pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT']])
+              lines = []
+              for kind in ('DIRECTORY_ENTRY_IMPORT', 'DIRECTORY_ENTRY_DELAY_IMPORT'):
+                  for entry in getattr(pe, kind, []):
+                      dll = entry.dll.decode()
+                      names = [imp.name.decode() for imp in entry.imports if imp.name]
+                      wanted = [name for name in names if 'WaitOnAddress' in name or 'WakeByAddress' in name or 'vertdll' in dll.lower()]
+                      lines.append(kind[16:] + ' ' + dll + ' (' + str(len(names)) + ')' + (': ' + ', '.join(wanted[:40]) if wanted else ''))
+              print('::warning title=imports of ' + path.replace(chr(92), '/').split('/')[-1] + '::' + '%0A'.join(lines)[:3900])
+          " "$test" target/release/${{ matrix.exe }}
       - name: Size
         if: (success() || failure()) && steps.release.outcome == 'success'
         run: ls -l "target/release/${{ matrix.exe }}" && echo "::notice title=meter-app size (${{ runner.os }})::$(stat -c %s "target/release/${{ matrix.exe }}" 2>/dev/null || wc -c < "target/release/${{ matrix.exe }}") bytes"

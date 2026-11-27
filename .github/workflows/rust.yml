@@ -180,7 +180,9 @@ jobs:
           cp ../assets/game-data/combat.json ../assets/game-data/maps.json ../package/assets/
           if [ "$RUNNER_OS" = Windows ]; then icon=../src/AlbionMeter.Server/app.ico; else icon=crates/meter-app/assets/icon.png; fi
           if [ "$RUNNER_OS" = Windows ]; then channel=rust-win; else channel=rust-linux; fi
-          vpk pack --packId AlbionMeter --packVersion "$version" --packTitle "Albion Meter" --packAuthors AlbionLab \
+          # Not "AlbionMeter": Velopack installs into %LocalAppData%\<packId> and removes that folder on uninstall, and
+          # %LocalAppData%\AlbionMeter is the meter's history.
+          vpk pack --packId AlbionLab.AlbionMeter --packVersion "$version" --packTitle "Albion Meter" --packAuthors AlbionLab \
             --packDir ../package --mainExe "${{ matrix.exe }}" --icon "$icon" --channel "$channel" --delta None --outputDir ../releases
           ls -l ../releases
           for file in ../releases/*; do echo "::notice title=package ($RUNNER_OS)::$(basename "$file") $(wc -c < "$file") bytes"; done

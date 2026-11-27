@@ -73,7 +73,7 @@ jobs:
                   print(message['executable'])" | tail -1)
           cdb="/c/Program Files (x86)/Windows Kits/10/Debuggers/x64/cdb.exe"
           # The faulting thread's stack at the first-chance access violation, and again if it is fatal.
-          printf '%s\n' 'sxe -c ".echo FIRST-CHANCE; .lastevent; ~#kn 30; gn" -c2 ".echo SECOND-CHANCE; .lastevent; ~#kn 40; q" av' 'g' > cdb.txt
+          printf '%s\n' '.symfix' 'sxe -c ".echo FIRST-CHANCE; .lastevent; ~#kn 30; gn" -c2 ".echo SECOND-CHANCE; .lastevent; .exr -1; r; ~*kn 12; !analyze -v; lm; q" av' 'g' > cdb.txt
           "$cdb" -G -lines -cf cdb.txt "$exe" --test-threads=1 > cdb.log 2>&1 || true
           tail -200 cdb.log
           python3 -c "
@@ -82,8 +82,11 @@ jobs:
           for marker in ('FIRST-CHANCE', 'SECOND-CHANCE'):
               found = re.search('^' + marker, text, re.M)
               if found:
-                  block = text[found.start():found.start() + 3800]
-                  print('::error title=meter-app test crash, ' + marker.lower() + '::' + block.replace('%', '%25').replace('\\r', '').replace('\\n', '%0A'))"
+                  size = 3800 if marker == 'FIRST-CHANCE' else 3800 * 7
+                  block = text[found.start():found.start() + size]
+                  for part in range(0, len(block), 3800):
+                      chunk = block[part:part + 3800]
+                      print('::error title=meter-app test crash, ' + marker.lower() + ' ' + str(part // 3800 + 1) + '::' + chunk.replace('%', '%25').replace('\\r', '').replace('\\n', '%0A'))"
       - name: Release build
         if: success() || failure()
         id: release

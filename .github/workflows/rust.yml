@@ -50,21 +50,30 @@ jobs:
           echo "LIBPCAP_LIBDIR=$RUNNER_TEMP\\npcap-sdk\\Lib\\x64" >> "$GITHUB_ENV"
       - name: Clippy
         run: scripts/ci-run.sh cargo clippy --workspace --all-targets -- -D warnings
+      # Each check runs even when an earlier one failed, so one run shows every problem.
       - name: Tests
+        if: success() || failure()
         run: scripts/ci-run.sh cargo test --workspace
       - name: Release build
+        if: success() || failure()
+        id: release
         run: scripts/ci-run.sh cargo build --release -p meter-app
       - name: Size
+        if: (success() || failure()) && steps.release.outcome == 'success'
         run: ls -l "target/release/${{ matrix.exe }}" && echo "::notice title=meter-app size (${{ runner.os }})::$(stat -c %s "target/release/${{ matrix.exe }}" 2>/dev/null || wc -c < "target/release/${{ matrix.exe }}") bytes"
       - uses: actions/upload-artifact@v4
+        if: (success() || failure()) && steps.release.outcome == 'success'
         with:
           name: meter-app-${{ runner.os }}
           path: rust/target/release/${{ matrix.exe }}
       # Velopack: Setup.exe on Windows, an AppImage on Linux, on the rust-beta channel; built here, never published.
       - uses: actions/setup-dotnet@v4
+        if: (success() || failure()) && steps.release.outcome == 'success'
         with:
           dotnet-version: 8.0.x
       - name: Package
+        if: (success() || failure()) && steps.release.outcome == 'success'
+        id: package
         run: |
           dotnet tool install -g vpk --version "$VELOPACK_VERSION"
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
@@ -77,6 +86,7 @@ jobs:
           ls -l ../releases
           for file in ../releases/*; do echo "::notice title=package ($RUNNER_OS)::$(basename "$file") $(wc -c < "$file") bytes"; done
       - uses: actions/upload-artifact@v4
+        if: (success() || failure()) && steps.package.outcome == 'success'
         with:
           name: packages-${{ runner.os }}
           path: releases/

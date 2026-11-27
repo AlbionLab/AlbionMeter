@@ -436,12 +436,16 @@ async function downloadRust(version) {
   setUpdate({ state: 'ready', version });
 }
 
-/** Installs the downloaded Rust meter and opens it; this meter's service is already stopped. Returns false on failure. */
-function installRust() {
+/**
+ * Installs the downloaded Rust meter, and opens it when `open` (restart from the toast); on quit it is only installed,
+ * as autoInstallOnAppQuit does. This meter's service is already stopped. Returns false on failure.
+ */
+function installRust(open = true) {
+  if (!migration || migration.installed) return !!migration;
   try {
     if (process.platform === 'win32') {
-      // Velopack's Setup.exe installs into %LocalAppData%\AlbionLab.AlbionMeter and starts the meter itself.
-      spawn(migration.file, [], { detached: true, stdio: 'ignore', windowsHide: false }).unref();
+      // Velopack's Setup.exe installs into %LocalAppData%\AlbionLab.AlbionMeter (and starts the meter when it is done).
+      spawn(migration.file, open ? [] : ['--silent'], { detached: true, stdio: 'ignore', windowsHide: !open }).unref();
     } else {
       // The AppImage takes this one's place, so the launcher and the menu entry open the Rust meter from now on; a
       // meter installed as a package gets the AppImage in ~/Applications instead.
@@ -451,8 +455,9 @@ function installRust() {
       fs.chmodSync(`${target}.new`, 0o755);
       fs.renameSync(`${target}.new`, target);
       writeSettings({ rustMeter: target });
-      spawn(target, [], { detached: true, stdio: 'ignore', env: { ...process.env, APPIMAGE: target } }).unref();
+      if (open) spawn(target, [], { detached: true, stdio: 'ignore', env: { ...process.env, APPIMAGE: target } }).unref();
     }
+    migration.installed = true;
     return true;
   } catch (error) {
     log(`the Rust meter could not be installed: ${error.message}`);
@@ -591,4 +596,6 @@ if (!app.requestSingleInstanceLock()) {
     leaving = true;
     stopServer().finally(() => app.quit());
   });
+  // Closing the meter with the Rust meter downloaded installs it, as a downloaded update is installed on quit.
+  app.on('will-quit', () => { if (migration && update.state === 'ready') installRust(false); });
 }

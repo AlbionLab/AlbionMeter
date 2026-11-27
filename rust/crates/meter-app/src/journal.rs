@@ -21,6 +21,8 @@ use crate::merge::Record;
 use crate::ranking::Metric;
 use crate::{AppWindow, AxisLabel, Cell, FloorRow, FloorTab, InspectorItem, InspectorPlayer, JournalState, LegendRow, LoadoutRow, ProgressionRow, RunRow, Series};
 
+pub type ItemIds = Rc<dyn Fn(i32) -> Option<Arc<str>>>;
+
 const PALETTE: [&str; 8] = ["#9ebbf3", "#eab978", "#eb95b7", "#67cbd7", "#b69aff", "#6dd1ad", "#f28b82", "#c5d87a"];
 const MAX_FILLED_SERIES: usize = 4;
 const RESOLUTIONS: [u32; 5] = [1, 5, 10, 30, 60];
@@ -206,6 +208,9 @@ pub struct Journal {
     exporting: bool,
     link_reset: slint::Timer,
     icons: HashMap<Arc<str>, slint::Image>,
+    requested: RefCell<HashSet<Arc<str>>>,
+    /// The item id of an item index, for its icon (`ItemContribution` carries only the index).
+    pub item_ids: ItemIds,
     run_rows: Rc<VecModel<RunRow>>,
     tabs: Rc<VecModel<FloorTab>>,
     y_labels: Rc<VecModel<AxisLabel>>,
@@ -247,6 +252,8 @@ impl Journal {
             exporting: false,
             link_reset: slint::Timer::default(),
             icons: HashMap::new(),
+            requested: RefCell::default(),
+            item_ids: Rc::new(|_| None),
             run_rows: Rc::default(),
             tabs: Rc::default(),
             y_labels: Rc::default(),
@@ -470,6 +477,18 @@ impl Journal {
         id.and_then(|id| self.icons.get(id)).map_or_else(|| (slint::Image::default(), false), |image| (image.clone(), true))
     }
 
+    /// An item's icon: its id from the item index (the shipped combat.json, or the fixture's item table), then the cache.
+    fn item_icon(&self, item: &SourceItem) -> (slint::Image, bool) {
+        let id = item.first.item_index.and_then(|index| (self.item_ids)(index));
+        if let Some(id) = &id
+            && !self.icons.contains_key(id)
+            && self.requested.borrow_mut().insert(id.clone())
+        {
+            let _ = self.commands.send(Command::Icon(id.clone()));
+        }
+        self.icon(id.as_ref())
+    }
+
     /// A player's weapon by name (weapons.ts), with its tier when the catalog knows it.
     fn weapon(&self, player: &Player) -> (slint::Image, bool, String) {
         let (icon, has_icon) = self.icon(player.weapon_id.as_ref());
@@ -481,7 +500,7 @@ impl Journal {
     fn identity(&self, player: &Player, seen: Option<&(SourceItem, String)>) -> (slint::Image, bool, String) {
         match seen {
             Some((item, _)) => {
-                let (icon, has_icon) = self.icon(item.first.item_id.as_ref());
+                let (icon, has_icon) = self.item_icon(item);
                 (icon, has_icon, item_tier(item))
             }
             None => self.weapon(player),
@@ -904,15 +923,15 @@ impl Journal {
                         name: item.first.item.as_ref().into(),
                         sources: sources.into(),
                         value: precise(language, *item_value).into(),
-                        icon: self.icon(item.first.item_id.as_ref()).0,
-                        has_icon: self.icon(item.first.item_id.as_ref()).1,
+                        icon: self.item_icon(item).0,
+                        has_icon: self.item_icon(item).1,
                         tier: item_tier(item).into(),
                     }
                 })
                 .collect();
             let (icon, has_icon, tier) = match contributions.first() {
                 Some((primary, _)) => {
-                    let (icon, has_icon) = self.icon(primary.first.item_id.as_ref());
+                    let (icon, has_icon) = self.item_icon(primary);
                     (icon, has_icon, item_tier(primary))
                 }
                 None => self.weapon(player),
@@ -1009,8 +1028,8 @@ impl Journal {
                         healing_share: if member.healing > 0.0 { (item.healing / member.healing * 100.0) as f32 } else { 0.0 },
                         healing_bar: item.healing > 0.0,
                         hps: if item.healing != 0.0 { precise(language, rate(item.healing, seconds)) } else { String::new() }.into(),
-                        icon: self.icon(item.first.item_id.as_ref()).0,
-                        has_icon: self.icon(item.first.item_id.as_ref()).1,
+                        icon: self.item_icon(item).0,
+                        has_icon: self.item_icon(item).1,
                         tier: item_tier(item).into(),
                         bar_color: faded,
                     });
@@ -1091,8 +1110,8 @@ impl Journal {
                     name: item.first.item.as_ref().into(),
                     sub: slot_name(&item.first.slot).into(),
                     cells: ModelRc::new(VecModel::from(cells)),
-                    icon: self.icon(item.first.item_id.as_ref()).0,
-                    has_icon: self.icon(item.first.item_id.as_ref()).1,
+                    icon: self.item_icon(&item).0,
+                    has_icon: self.item_icon(&item).1,
                     tier: item_tier(&item).into(),
                 });
             }

@@ -16,6 +16,7 @@ mod feed;
 mod fixture;
 mod format;
 mod headless;
+mod instance;
 mod i18n;
 mod journal;
 mod merge;
@@ -50,6 +51,7 @@ struct Options {
     screen: Option<String>,
     screenshot: Option<std::path::PathBuf>,
     fixture: Option<std::path::PathBuf>,
+    replay: Option<std::path::PathBuf>,
 }
 
 fn options() -> Options {
@@ -72,6 +74,13 @@ fn options() -> Options {
             "--screen" => options.screen = args.next(),
             "--screenshot" => options.screenshot = args.next().map(Into::into),
             "--fixture" => options.fixture = args.next().map(Into::into),
+            "--replay" => options.replay = args.next().map(Into::into),
+            // The C# server's settings (`--Storage:Directory=…`, `--Capture:AutoStart=true`, …), read by meter-runtime.
+            _ if ["--Storage:", "--Capture:", "--AlbionLab:"].iter().any(|prefix| arg.starts_with(prefix)) => {
+                if !arg.contains('=') {
+                    args.next();
+                }
+            }
             _ => eprintln!("unknown option {arg}"),
         }
     }
@@ -121,6 +130,16 @@ fn main() -> Result<(), slint::PlatformError> {
         }
         return Ok(());
     }
+    let real = !options.fake && options.screen.is_none() && options.screenshots.is_none();
+    let config = real.then(|| meter_runtime::Config::from_environment(env!("CARGO_PKG_VERSION"), &std::env::args().collect::<Vec<_>>()));
+    if let (Some(config), Some(output)) = (&config, &options.screenshot) {
+        let size = (1280, 820);
+        if let Err(error) = headless::run_runtime(config.clone(), item_ids(config), options.replay.clone(), options.view.as_deref().unwrap_or("meter"), options.language.unwrap_or_else(desktop::language), output, size) {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
     let screen = match options.screen.as_deref().map(|name| fixture::screen(&fixture_path, name)) {
         Some(Ok(screen)) => Some(screen),
         Some(Err(error)) => {
@@ -129,6 +148,22 @@ fn main() -> Result<(), slint::PlatformError> {
         }
         None => None,
     };
+    // Startup of the installed meter, as desktop/main.js did before it opened its window: elevation on Windows, the
+    // capture permission on Linux, then one meter per storage folder.
+    let mut _instance = None;
+    if let Some(config) = &config {
+        desktop::elevate_on_windows();
+        desktop::capture_permission_at_start();
+        match instance::claim(&config.storage, || {
+            let _ = slint::invoke_from_event_loop(|| controller::with_controller(|controller| controller.focus_window()));
+        }) {
+            instance::Instance::First(guard) => _instance = Some(guard),
+            instance::Instance::Second => {
+                eprintln!("Albion Meter is already running; its window was asked to come to the front.");
+                return Ok(());
+            }
+        }
+    }
     if options.software {
         // SAFETY: still single-threaded, before anything reads the environment.
         unsafe { std::env::set_var("ALBION_METER_RENDERER", "software") };
@@ -163,8 +198,10 @@ fn main() -> Result<(), slint::PlatformError> {
     let controller = Controller::new(&app, commands, language);
     controller.borrow_mut().persist = options.screenshots.is_none() && options.screen.is_none();
 
+    let mut feed_thread = None;
     if let Some(screen) = screen {
         // One fixture screen in a real window: its events, then the UI state the React side clicks into.
+        controller.borrow_mut().journal.item_ids = screen.item_ids.clone();
         for event in screen.events {
             controller.borrow_mut().handle(event);
         }
@@ -176,22 +213,31 @@ fn main() -> Result<(), slint::PlatformError> {
             }
         });
         drop(received);
-    } else if options.fake || options.screenshots.is_some() {
-        let feed: Box<dyn MeterFeed> = Box::new(fake::FakeFeed { update: options.update || options.screenshots.is_some(), autostart: !options.idle });
-        std::thread::Builder::new()
-            .name("feed".into())
-            .spawn(move || {
-                feed.run(
-                    Box::new(|event| {
-                        let _ = slint::invoke_from_event_loop(move || controller::dispatch(event));
-                    }),
-                    received,
-                )
-            })
-            .expect("the feed thread starts");
     } else {
-        eprintln!("The capture engine is not wired in yet: run with --fake to see the meter on a simulated fight.");
-        drop(received);
+        // The real meter (meter-runtime), or the simulated fight of --fake.
+        let feed: Box<dyn MeterFeed> = match config {
+            Some(config) => {
+                controller.borrow_mut().journal.item_ids = item_ids(&config);
+                if let Some(pcap) = &options.replay {
+                    let _ = controller.borrow().commands().send(feed::Command::Replay(pcap.clone()));
+                }
+                Box::new(meter_runtime::Runtime::new(config))
+            }
+            None => Box::new(fake::FakeFeed { update: options.update || options.screenshots.is_some(), autostart: !options.idle }),
+        };
+        feed_thread = Some(
+            std::thread::Builder::new()
+                .name("feed".into())
+                .spawn(move || {
+                    feed.run(
+                        Box::new(|event| {
+                            let _ = slint::invoke_from_event_loop(move || controller::dispatch(event));
+                        }),
+                        received,
+                    )
+                })
+                .expect("the feed thread starts"),
+        );
     }
     controller::install(controller.clone());
 
@@ -218,5 +264,21 @@ fn main() -> Result<(), slint::PlatformError> {
         fall_back(&renderer, &error);
     }
     controller.borrow().save_placement();
+    // Closing: the command channel closes with the controller, and the meter saves the record, ends the AlbionLab
+    // session and stops the capture before its thread ends.
+    controller::uninstall();
+    drop(controller);
+    drop(app);
+    if let Some(thread) = feed_thread {
+        let _ = thread.join();
+    }
+    drop(_instance);
+    desktop::restart_if_asked();
     Ok(())
+}
+
+/// The item ids of the item indexes, from the shipped combat.json (for item icons in the journal).
+fn item_ids(config: &meter_runtime::Config) -> journal::ItemIds {
+    let catalog = config.assets.as_ref().and_then(|assets| meter_core::CombatSourceCatalog::load(assets.join("combat.json")));
+    Rc::new(move |index| catalog.as_ref().and_then(|catalog| catalog.find_item(index)).map(|item| std::sync::Arc::from(item.id.as_str())))
 }

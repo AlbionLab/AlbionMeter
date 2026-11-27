@@ -176,7 +176,6 @@ fn snapshot(value: &Value, lookup: &Lookup) -> Option<Snapshot> {
                 player_id: item.player_id.into(),
                 player_name: item.player_name.into(),
                 item_index: item.item_index,
-                item_id: definition.map(|definition| definition.id.as_str().into()),
                 slot: item.slot.into(),
                 item: item.item.into(),
                 tier: definition.and_then(ItemDefinition::tier).map(Into::into),
@@ -389,6 +388,8 @@ pub struct Ui {
 
 pub struct Screen {
     pub events: Vec<FeedEvent>,
+    /// The fixture's item table (`/api/items/{index}`) for item icons.
+    pub item_ids: crate::journal::ItemIds,
     pub ui: Ui,
     pub width: f32,
     pub height: f32,
@@ -465,7 +466,9 @@ pub fn screen(path: &Path, name: &str) -> Result<Screen, String> {
     }
     let ui = root.get("ui").cloned().unwrap_or_default();
     let window = root.get("window").cloned().unwrap_or_default();
+    let items: std::collections::HashMap<i32, Arc<str>> = lookup.items.iter().map(|(index, item)| (*index, Arc::from(item.id.as_str()))).collect();
     Ok(Screen {
+        item_ids: std::rc::Rc::new(move |index| items.get(&index).cloned()),
         events,
         ui: Ui {
             view: text(&ui, "view").unwrap_or_else(|| "meter".into()),

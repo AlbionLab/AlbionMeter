@@ -61,3 +61,46 @@
 ## Side effect to know about
 
 My first `--screenshots` run (before persistence was turned off for screenshot modes) wrote `"language": "pt"` into `~/.config/Albion Meter/settings.json`. It also wrote width/height 1256×1374 into `window.json`, the files the Electron build shares. I do not know the previous values; please check them. Screenshot and fixture modes no longer save anything.
+
+## Integration: the real meter (meter-runtime)
+
+- **Feed.** `src/feed.rs` is now `pub use meter_runtime::feed::*`. By default `main` runs `meter_runtime::Runtime` as the `MeterFeed`, configured by `Config::from_environment`. It reads the C# settings: `--Storage:Directory=…`, `--Capture:AutoStart=true`, `--AlbionLab:Url=…`, or the `Storage__Directory` style variables.
+- **Modes that still use the fake feed:** `--fake`, `--fake-idle`, `--screenshots`, and the fixture modes (`--screen`, `--screenshot`).
+- **Update.** `Update` and `InstallUpdate` stay on the app side; the runtime ignores `InstallUpdate`.
+- **Item icons.** The runtime's `ItemContribution` has no `item_id`. The journal looks the id up from the item index:
+  - in the real meter, in the shipped `combat.json` (`CombatSourceCatalog::find_item`);
+  - in the fixture, in its item table.
+  - Icons that are missing are requested with `Command::Icon`.
+- **Startup, as desktop/main.js does it:**
+  - **Storage.** The storage folder, the portable `data` folder and `assets/game-data` come from meter-runtime's `Config`.
+  - **Capture autostart.** Off, as in the Electron build. `--Capture:AutoStart=true` turns it on.
+  - **Linux permission** (`desktop::capture_permission_at_start`):
+    - It runs only in an installed meter (`ALBION_METER_PACKAGED`, else an executable outside a Cargo `target` folder).
+    - If the meter lacks CAP_NET_RAW, it asks once with `pkexec setcap`.
+    - An AppImage first copies itself and its `assets` to `<settings>/server/<version>`, as Electron did with the server.
+    - Granted, it starts the permitted executable. Refused, it opens anyway, and the Capture screen's "Allow packet capture" offers the grant again. That grant closes the meter cleanly, then starts it again.
+  - **Windows.** An unelevated installed meter restarts itself through UAC (`meter_capture::elevation`). Npcap availability is shown by the capture method list. This code is not compiled here: the Windows cross-check needs a MinGW C compiler for ring.
+  - **Single instance.** One meter per storage folder (`src/instance.rs`): a lock file plus a loopback port. A second start asks the first window to come to the front and quits. On Wayland, without an activation token, the window asks for attention (niri marks it urgent).
+  - **Clean shutdown.** After the window closes, the command channel closes, the runtime saves the record, ends the AlbionLab session and stops the capture, and `main` joins its thread.
+- **`merge.rs` fix.** A replayed capture starts at the capture's own times, which are earlier than now. The "older snapshot" rule of state.ts no longer compares across modes or against the "unavailable" placeholder. Before this, a replay of any capture recorded before the app started was dropped.
+
+### Verification
+- `cargo test -p meter-app` → 35 passed. This includes `instance::tests` and the merge test for replays.
+- `--screenshot <png> --replay <pcap> --Storage:Directory=<temp>` runs the real Runtime offscreen. Screenshots taken:
+  - the replayed 30-minute raid from `cargo run -p meter-app --example synthetic-pcap -- <folder>`, showing the bars with real weapon icons;
+  - the dungeon history from a copy of a real `encounters.db`: 18 runs, opened only in a temporary folder.
+- `python3 rust/scripts/runtime-check.py <release binary> <pcap>` with a real window on niri → 5/5:
+  - the window opens;
+  - a second start quits and the first asks for attention;
+  - closing the window ends the meter (exit 0);
+  - the replayed record is in the history afterwards.
+
+### Measurements (release, software renderer, real window, temporary storage)
+| | CPU | RSS |
+|---|---|---|
+| Idle, `--Capture:AutoStart=true` (capture refused: no CAP_NET_RAW on this binary) | 0.0–0.1 % | 40.3 MB, flat (4.8 MB anonymous) |
+| Replaying the 30-minute raid (the whole file in a few seconds) | 9 % for the first 10 s | 146 MB peak |
+| After that replay, record shown | 0.1 % | 82.4 MB (42.7 MB anonymous) |
+
+- **Binary: 27.7 MB with the runtime** (tokio, reqwest/rustls, rusqlite, the capture). The 20 MB budget needs `opt-level = "s"` or trimming in the runtime's dependencies.
+- **Idle with a live capture running was not measured.** It needs `setcap cap_net_raw=ep` on the binary, which takes the user's password.

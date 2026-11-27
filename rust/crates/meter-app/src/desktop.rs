@@ -186,17 +186,125 @@ pub fn pick(folder: bool, title: &str, filters: &[&str]) -> Option<PathBuf> {
     None
 }
 
-/// Lets this executable read raw packets (CAP_NET_RAW) after the system's password prompt, then starts it again so the
-/// capability applies. Returns false when it was refused or is not needed on this platform.
+/// Whether this is an installed meter rather than a development build (Electron's `app.isPackaged`):
+/// `ALBION_METER_PACKAGED=1/0` decides, else an executable outside a Cargo `target` folder.
+pub fn packaged() -> bool {
+    match std::env::var("ALBION_METER_PACKAGED").as_deref() {
+        Ok("1") => true,
+        Ok("0") => false,
+        _ => std::env::current_exe().is_ok_and(|exe| !exe.components().any(|part| part.as_os_str() == "target")),
+    }
+}
+
+/// `getcap` reports CAP_NET_RAW on the file.
+fn can_capture(executable: &Path) -> bool {
+    Command::new("getcap").arg(executable).output().is_ok_and(|output| String::from_utf8_lossy(&output.stdout).contains("cap_net_raw"))
+}
+
+/// The executable that gets the capability. An AppImage runs from a read-only mount, so, like desktop/main.js does with
+/// the capture service, the meter (and its `assets`) is copied to `<settings>/server/<version>` once and runs from
+/// there; any other install is granted in place.
+fn permitted_executable() -> Option<PathBuf> {
+    let executable = std::env::current_exe().ok()?;
+    if std::env::var_os("APPIMAGE").is_none() {
+        return Some(executable);
+    }
+    let root = config_dir()?.join("server");
+    let version = env!("CARGO_PKG_VERSION");
+    let folder = root.join(version);
+    let copy = folder.join(executable.file_name()?);
+    if !copy.exists() {
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).ok()?;
+        std::fs::copy(&executable, &copy).ok()?;
+        if let Some(assets) = executable.parent().map(|parent| parent.join("assets")).filter(|assets| assets.is_dir()) {
+            copy_tree(&assets, &folder.join("assets"));
+        }
+    }
+    // Older versions' copies go.
+    for entry in std::fs::read_dir(&root).into_iter().flatten().flatten() {
+        if entry.file_name() != version {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+    Some(copy)
+}
+
+fn copy_tree(from: &Path, to: &Path) {
+    let _ = std::fs::create_dir_all(to);
+    for entry in std::fs::read_dir(from).into_iter().flatten().flatten() {
+        let target = to.join(entry.file_name());
+        if entry.path().is_dir() {
+            copy_tree(&entry.path(), &target);
+        } else {
+            let _ = std::fs::copy(entry.path(), target);
+        }
+    }
+}
+
+/// Starts `executable` with this process's arguments and ends this one.
+fn hand_over(executable: &Path) -> ! {
+    let status = Command::new(executable).args(std::env::args_os().skip(1)).env("ALBION_METER_PERMISSION_ASKED", "1").status();
+    std::process::exit(status.ok().and_then(|status| status.code()).unwrap_or(0));
+}
+
+/// At start on Linux (desktop/main.js `linuxServer`): an installed meter without CAP_NET_RAW asks for it once through
+/// the system's password prompt (pkexec setcap), then runs the permitted executable. Refused, the meter opens anyway and
+/// the Capture screen offers "Allow packet capture" again.
+pub fn capture_permission_at_start() {
+    if !cfg!(target_os = "linux") || !packaged() || std::env::var_os("ALBION_METER_PERMISSION_ASKED").is_some() {
+        return;
+    }
+    let Some(executable) = permitted_executable() else { return };
+    let current = std::env::current_exe().ok();
+    if can_capture(&executable) {
+        if current.as_deref() != Some(executable.as_path()) {
+            hand_over(&executable);
+        }
+        return;
+    }
+    if Command::new("pkexec").arg("setcap").arg("cap_net_raw=ep").arg(&executable).status().is_ok_and(|status| status.success()) {
+        // The capability applies from the next exec, also for this very file.
+        hand_over(&executable);
+    }
+    eprintln!("packet capture permission was not granted; allow it later with: sudo setcap cap_net_raw=ep \"{}\"", executable.display());
+}
+
+/// The executable to start once this meter has closed (after a granted permission), so the capability applies.
+pub static RESTART: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+
+/// The Capture screen's "Allow packet capture": the same grant. Granted, the meter closes as usual (the record is
+/// saved, the single-instance lock released) and `main` starts the permitted executable. Returns false when it was
+/// refused or is not needed on this platform.
 pub fn grant_capture_permission() -> bool {
     if !cfg!(target_os = "linux") {
         return false;
     }
-    let Ok(executable) = std::env::current_exe() else { return false };
+    let Some(executable) = permitted_executable() else { return false };
     let granted = Command::new("pkexec").arg("setcap").arg("cap_net_raw=ep").arg(&executable).status().is_ok_and(|status| status.success());
     if granted {
-        let _ = Command::new(&executable).args(std::env::args_os().skip(1)).spawn();
-        std::process::exit(0);
+        *RESTART.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(executable);
+        let _ = slint::quit_event_loop();
     }
-    false
+    granted
+}
+
+/// Starts the executable a granted permission asked for, once this meter is closed.
+pub fn restart_if_asked() {
+    if let Some(executable) = RESTART.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).take() {
+        let _ = Command::new(executable).args(std::env::args_os().skip(1)).env("ALBION_METER_PERMISSION_ASKED", "1").spawn();
+    }
+}
+
+/// On Windows the meter needs an elevated token for raw-socket capture (the Electron build asked for it in its
+/// manifest; the C# server restarted itself elevated): an unelevated start goes through the UAC prompt once.
+pub fn elevate_on_windows() {
+    #[cfg(windows)]
+    if packaged() && std::env::var_os("ALBION_METER_NO_ELEVATION").is_none() && !meter_capture::elevation::is_administrator() {
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        if meter_capture::elevation::restart_elevated(&args) {
+            std::process::exit(0);
+        }
+        eprintln!("running without administrator rights: packet capture will not start");
+    }
 }

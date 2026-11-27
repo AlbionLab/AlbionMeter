@@ -98,6 +98,90 @@ fn card(screen: fixture::Screen, output: &Path) -> Result<(), String> {
     std::fs::write(output, crate::screenshots::png(width, height, &rgba)).map_err(|error| format!("{}: {error}", output.display()))
 }
 
+/// The real meter offscreen: `meter_runtime::Runtime` with `config`, an optional capture replayed through it, then a
+/// screenshot of `view` once the replay ended (or the history loaded) and the meter settled. The record is saved on the
+/// way out, as closing the meter does.
+pub fn run_runtime(config: meter_runtime::Config, item_ids: crate::journal::ItemIds, replay: Option<std::path::PathBuf>, view: &str, language: Language, output: &Path, size: (u32, u32)) -> Result<(), String> {
+    use crate::feed::{Command, FeedEvent, MeterFeed};
+    use std::time::Duration;
+    let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
+    slint::platform::set_platform(Box::new(Headless { window: window.clone(), start: Instant::now() })).map_err(|error| error.to_string())?;
+    let app = AppWindow::new().map_err(|error| error.to_string())?;
+    let (width, height) = size;
+    window.set_size(slint::PhysicalSize::new(width, height));
+    let (sans, mono) = crate::desktop::fonts();
+    app.global::<Theme>().set_sans(sans.into());
+    app.global::<Theme>().set_mono(mono.into());
+    let (commands, received) = std::sync::mpsc::channel();
+    let controller = Controller::new(&app, commands.clone(), language);
+    controller.borrow_mut().persist = false;
+    controller.borrow_mut().journal.item_ids = item_ids;
+    let (events, incoming) = std::sync::mpsc::channel();
+    let feed: Box<dyn MeterFeed> = Box::new(meter_runtime::Runtime::new(config));
+    let thread = std::thread::spawn(move || feed.run(Box::new(move |event| {
+        let _ = events.send(event);
+    }), received));
+    if let Some(pcap) = &replay {
+        let _ = commands.send(Command::Replay(pcap.clone()));
+    }
+    let deadline = Instant::now() + Duration::from_secs(600);
+    let mut settled: Option<Instant> = None;
+    let mut dungeon = false;
+    let mut failure = None;
+    while Instant::now() < deadline && settled.is_none_or(|since| since.elapsed() < Duration::from_millis(1500)) {
+        let Ok(event) = incoming.recv_timeout(Duration::from_millis(50)) else {
+            if replay.is_none() && settled.is_none() && dungeon {
+                settled = Some(Instant::now());
+            }
+            continue;
+        };
+        if std::env::var_os("ALBION_METER_TRACE").is_some() {
+            match &event {
+                FeedEvent::Snapshot(snapshot) => eprintln!("snapshot {} {} {:?} seq {} members {} full {} points {}", snapshot.id, snapshot.started_at, snapshot.mode, snapshot.sequence, snapshot.members.len(), snapshot.full, snapshot.timeline.len()),
+                FeedEvent::Capture(status) => eprintln!("capture {} {} {:?}", status.state, status.source, status.error),
+                other => eprintln!("{}", format!("{other:?}").chars().take(120).collect::<String>()),
+            }
+        }
+        match &event {
+            FeedEvent::CaptureDone(error) if replay.is_some() => {
+                failure = error.clone();
+                settled = Some(Instant::now());
+            }
+            FeedEvent::Dungeon(_) => dungeon = true,
+            _ => {}
+        }
+        controller.borrow_mut().handle(event);
+    }
+    if let Some(error) = failure {
+        eprintln!("replay: {error}");
+    }
+    app.global::<Shell>().set_journal_enabled(view == "journal");
+    app.global::<Shell>().set_view(view.into());
+    app.show().map_err(|error| error.to_string())?;
+    let mut buffer = vec![PremultipliedRgbaColor::default(); (width * height) as usize];
+    for _ in 0..4 {
+        slint::platform::update_timers_and_animations();
+        // Icons and late snapshots that arrived while drawing.
+        while let Ok(event) = incoming.try_recv() {
+            controller.borrow_mut().handle(event);
+        }
+        window.request_redraw();
+        window.draw_if_needed(|renderer| {
+            renderer.render(&mut buffer, width as usize);
+        });
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let rgba: Vec<u8> = buffer.iter().flat_map(|pixel| [pixel.red, pixel.green, pixel.blue, 255]).collect();
+    if let Some(parent) = output.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::write(output, crate::screenshots::png(width, height, &rgba)).map_err(|error| format!("{}: {error}", output.display()))?;
+    drop(commands);
+    drop(controller);
+    let _ = thread.join();
+    Ok(())
+}
+
 pub fn run(fixture_path: &Path, name: &str, output: &Path) -> Result<(), String> {
     let screen = fixture::screen(fixture_path, name)?;
     if !screen.ui.card.is_empty() {
@@ -115,6 +199,7 @@ pub fn run(fixture_path: &Path, name: &str, output: &Path) -> Result<(), String>
     let language = if screen.ui.language == "pt" { Language::Pt } else { Language::En };
     let controller = Controller::new(&app, commands, language);
     controller.borrow_mut().persist = false;
+    controller.borrow_mut().journal.item_ids = screen.item_ids.clone();
     for event in screen.events {
         controller.borrow_mut().handle(event);
     }

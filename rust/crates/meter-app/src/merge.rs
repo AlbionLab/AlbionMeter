@@ -14,7 +14,9 @@ pub struct Record {
 impl Record {
     /// Applies `next`; false when it is older than what is shown and was dropped.
     pub fn merge(&mut self, next: Arc<Snapshot>) -> bool {
-        if let Some(previous) = &self.snapshot {
+        // The placeholder before any record ("unavailable"), and a record of the other kind (a replay after live, or live
+        // after a replay), never hold a snapshot back: a replayed capture starts at the capture's own, earlier, times.
+        if let Some(previous) = self.snapshot.as_ref().filter(|previous| &*previous.mode != "unavailable" && previous.mode == next.mode) {
             // A snapshot that started earlier is older, whatever its id: an older record, or the same one before a Reset.
             if previous.started_at > next.started_at {
                 return false;
@@ -56,6 +58,22 @@ mod tests {
 
     fn seconds(record: &Record) -> Vec<u32> {
         record.timeline.iter().map(|point| point.second).collect()
+    }
+
+    #[test]
+    fn a_replay_of_an_older_capture_replaces_the_placeholder_and_the_live_record() {
+        let mut record = Record::default();
+        let mut placeholder = (*snapshot("p", "2026-11-27T03:55:00Z", 0, true, &[])).clone();
+        placeholder.mode = "unavailable".into();
+        assert!(record.merge(Arc::new(placeholder)));
+        let mut replay = (*snapshot("r", "1970-01-01T00:00:02Z", 49, true, &[0, 1])).clone();
+        replay.mode = "replay".into();
+        assert!(record.merge(Arc::new(replay.clone())));
+        assert_eq!(seconds(&record), [0, 1]);
+        let mut live = (*snapshot("l", "2026-11-27T03:56:00Z", 1, true, &[0])).clone();
+        live.mode = "live".into();
+        assert!(record.merge(Arc::new(live)));
+        assert!(record.merge(Arc::new(replay)), "a replay started after live shows");
     }
 
     #[test]

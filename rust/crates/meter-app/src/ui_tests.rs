@@ -39,6 +39,7 @@ fn start(screen: &str, language: Language) -> Ui {
     let controller = Controller::new(&app, sender, language);
     controller.borrow_mut().persist = false;
     let screen = fixture::screen(&fixture::default_path(), screen).unwrap();
+    controller.borrow_mut().journal.item_ids = screen.item_ids.clone();
     for event in screen.events {
         controller.borrow_mut().handle(event);
     }

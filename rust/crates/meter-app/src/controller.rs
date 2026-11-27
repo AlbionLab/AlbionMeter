@@ -104,6 +104,11 @@ pub fn install(controller: Rc<RefCell<Controller>>) {
     CONTROLLER.with(|slot| *slot.borrow_mut() = Some(controller));
 }
 
+/// Lets the controller go (closing): its command sender with it, which ends the feed.
+pub fn uninstall() {
+    CONTROLLER.with(|slot| slot.borrow_mut().take());
+}
+
 /// Hands a feed event to the controller; called on the UI thread through `slint::invoke_from_event_loop`.
 pub fn dispatch(event: FeedEvent) {
     if let Some(controller) = CONTROLLER.with(|slot| slot.borrow().clone()) {
@@ -1001,6 +1006,24 @@ impl Controller {
                 saved.maximized = true;
                 desktop::save_placement(&saved);
             }
+        });
+    }
+
+    pub fn commands(&self) -> &Sender<Command> {
+        &self.commands
+    }
+
+    /// A second start of the meter brings this one to the front.
+    pub fn focus_window(&self) {
+        use slint::winit_030::WinitWindowAccessor;
+        self.with_app(|app| {
+            app.window().set_minimized(false);
+            // Wayland gives focus only with an activation token, which a second start does not have: the window then asks
+            // for attention instead (urgent in the task bar / compositor).
+            app.window().with_winit_window(|winit| {
+                winit.focus_window();
+                winit.request_user_attention(Some(slint::winit_030::winit::window::UserAttentionType::Informational));
+            });
         });
     }
 

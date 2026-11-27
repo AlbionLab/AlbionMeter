@@ -59,6 +59,27 @@ jobs:
         env:
           RUST_MIN_STACK: 8388608
         run: scripts/ci-run.sh cargo test --workspace ${{ matrix.test_args }}
+      # A crash in the meter-app tests on Windows prints nothing; the debugger gives its stack.
+      - name: Crash stack
+        if: failure() && runner.os == 'Windows'
+        env:
+          RUST_MIN_STACK: 8388608
+        run: |
+          exe=$(cargo test -p meter-app --bin meter-app --no-run --message-format=json 2>/dev/null | python3 -c "
+          import json, sys
+          for line in sys.stdin:
+              message = json.loads(line)
+              if message.get('reason') == 'compiler-artifact' and message.get('executable') and message['profile']['test']:
+                  print(message['executable'])" | tail -1)
+          cdb="/c/Program Files (x86)/Windows Kits/10/Debuggers/x64/cdb.exe"
+          "$cdb" -g -G -lines -c ".lastevent; .ecxr; kn 40; ~*kn 12; q" "$exe" --test-threads=1 > cdb.log 2>&1 || true
+          tail -150 cdb.log
+          python3 -c "
+          import re, sys
+          text = open('cdb.log', encoding='utf-8', errors='replace').read()
+          start = text.find('Last event')
+          block = text[start:start + 3800] if start >= 0 else text[-3800:]
+          print('::error title=meter-app test crash stack::' + block.replace('%', '%25').replace('\\r', '').replace('\\n', '%0A'))"
       - name: Release build
         if: success() || failure()
         id: release

@@ -289,6 +289,7 @@ impl Controller {
 
         let shell = app.global::<Shell>();
         shell.on_set_language(flag(Box::new(|this, pt| this.set_language(if pt { Language::Pt } else { Language::En }))));
+        shell.on_view_changed(with(Box::new(|this, view| this.journal.set_visible(view == "journal"))));
         shell.on_window_action(with(Box::new(|this, action| this.window_action(&action))));
         shell.on_dismiss_error(on(Box::new(|this| {
             this.error = None;

@@ -41,6 +41,8 @@ export global Shell {
     in property <string> update-progress;
     in-out property <string> update-later;
     callback set-language(bool);
+    // The shown view changed (the journal draws itself only while it is shown).
+    callback view-changed(string);
     // minimize | maximize | close | drag | resize-<n|s|e|w|ne|nw|se|sw>
     callback window-action(string);
     callback dismiss-error();

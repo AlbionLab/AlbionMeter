@@ -32,6 +32,7 @@ impl Platform for Headless {
 /// The state the React side clicks into before its screenshot.
 pub fn apply(app: &AppWindow, ui: &fixture::Ui) {
     app.global::<Shell>().set_view(ui.view.as_str().into());
+    app.global::<Shell>().invoke_view_changed(ui.view.as_str().into());
     if ui.view == "journal" {
         app.global::<Shell>().set_journal_enabled(true);
         let journal = app.global::<JournalState>();
@@ -157,6 +158,7 @@ pub fn run_runtime(config: meter_runtime::Config, item_ids: crate::journal::Item
     }
     app.global::<Shell>().set_journal_enabled(view == "journal");
     app.global::<Shell>().set_view(view.into());
+    app.global::<Shell>().invoke_view_changed(view.into());
     app.show().map_err(|error| error.to_string())?;
     let mut buffer = vec![PremultipliedRgbaColor::default(); (width * height) as usize];
     for _ in 0..4 {

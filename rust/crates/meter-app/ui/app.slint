@@ -31,6 +31,8 @@ export component AppWindow inherits Window {
     background: Theme.bg;
     default-font-family: Theme.sans;
     default-font-size: 13px;
+    private property <string> view: Shell.view;
+    changed view => { Shell.view-changed(self.view); }
     init => {
         Shell.window-width = self.width;
         Shell.window-height = self.height;

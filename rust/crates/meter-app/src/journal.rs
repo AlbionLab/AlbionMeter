@@ -208,6 +208,8 @@ pub struct Journal {
     exporting: bool,
     link_reset: slint::Timer,
     icons: HashMap<Arc<str>, slint::Image>,
+    visible: bool,
+    stale: bool,
     requested: RefCell<HashSet<Arc<str>>>,
     /// The item id of an item index, for its icon (`ItemContribution` carries only the index).
     pub item_ids: ItemIds,
@@ -252,6 +254,8 @@ impl Journal {
             exporting: false,
             link_reset: slint::Timer::default(),
             icons: HashMap::new(),
+            visible: false,
+            stale: false,
             requested: RefCell::default(),
             item_ids: Rc::new(|_| None),
             run_rows: Rc::default(),
@@ -509,7 +513,26 @@ impl Journal {
 
     pub fn add_icon(&mut self, id: Arc<str>, image: slint::Image) {
         self.icons.insert(id, image);
-        self.render();
+        self.refresh();
+    }
+
+    /// Redraws the journal when it is on screen; otherwise it is redrawn when it is shown (dungeon updates arrive every
+    /// second or two during a run and must not cost anything while the meter is shown).
+    fn refresh(&mut self) {
+        if self.visible {
+            self.render_list();
+            self.render();
+        } else {
+            self.stale = true;
+        }
+    }
+
+    pub fn set_visible(&mut self, visible: bool) {
+        self.visible = visible;
+        if visible && std::mem::take(&mut self.stale) {
+            self.render_list();
+            self.render();
+        }
     }
 
     fn with(&self, apply: impl FnOnce(&JournalState)) {
@@ -541,8 +564,7 @@ impl Journal {
 
     pub fn set_language(&mut self, language: Language) {
         self.language = language;
-        self.render_list();
-        self.render();
+        self.refresh();
     }
 
     /// The live record is not a dungeon run by itself; the run arrives through `FeedEvent::Dungeon`.
@@ -555,7 +577,7 @@ impl Journal {
         {
             let _ = self.commands.send(Command::OpenDungeon(first.id.clone()));
         }
-        self.render_list();
+        self.refresh();
     }
 
     pub fn run(&mut self, run: Arc<DungeonRun>) {
@@ -567,8 +589,7 @@ impl Journal {
         }
         if self.selected.as_ref().is_none_or(|selected| *selected == run.summary.id) {
             self.run = Some(run);
-            self.render_list();
-            self.render();
+            self.refresh();
         }
     }
 

@@ -4,3 +4,16 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+crossbeam-channel = "0.5.17"
+meter-capture.workspace = true
+meter-core.workspace = true
+meter-lab.workspace = true
+meter-store.workspace = true
+serde.workspace = true
+serde_json = { workspace = true, features = ["preserve_order", "float_roundtrip"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+uuid = "1"
+
+[dev-dependencies]
+sha2 = "0.10"

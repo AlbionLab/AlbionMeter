@@ -168,6 +168,8 @@ pub struct Controller {
     lab_error: String,
     lab_connecting: bool,
     lab_copied: slint::Timer,
+    /// The account picture the runtime downloaded, decoded once per picture.
+    avatar: RefCell<Option<(Vec<u8>, Option<slint::Image>)>>,
     catalog: Option<Arc<Catalog>>,
     catalog_message: String,
     catalog_busy: bool,
@@ -217,6 +219,7 @@ impl Controller {
             lab_error: String::new(),
             lab_connecting: false,
             lab_copied: slint::Timer::default(),
+            avatar: RefCell::default(),
             catalog: None,
             catalog_message: String::new(),
             catalog_busy: false,
@@ -767,6 +770,18 @@ impl Controller {
         });
     }
 
+    fn avatar(&self, bytes: &[u8]) -> Option<slint::Image> {
+        let mut cached = self.avatar.borrow_mut();
+        if cached.as_ref().is_none_or(|(known, _)| known.as_slice() != bytes) {
+            let image = image::load_from_memory(bytes).ok().map(|picture| {
+                let picture = picture.to_rgba8();
+                slint::Image::from_rgba8(slint::SharedPixelBuffer::clone_from_slice(picture.as_raw(), picture.width(), picture.height()))
+            });
+            *cached = Some((bytes.to_vec(), image));
+        }
+        cached.as_ref().and_then(|(_, image)| image.clone())
+    }
+
     fn render_lab(&self) {
         let language = self.language();
         self.with_app(|app| {
@@ -781,7 +796,9 @@ impl Controller {
             lab.set_server(status.server.as_ref().into());
             lab.set_has_account(status.account.is_some());
             lab.set_account_name(status.account.as_ref().map(|account| account.0.as_str()).unwrap_or_default().into());
-            lab.set_has_avatar(false);
+            let avatar = status.account.as_ref().and_then(|account| account.1.as_deref()).and_then(|bytes| self.avatar(bytes));
+            lab.set_has_avatar(avatar.is_some());
+            lab.set_avatar(avatar.unwrap_or_default());
             lab.set_pairing(status.pairing.is_some());
             lab.set_pair_code(status.pairing.as_ref().map(|pairing| pairing.0.as_str()).unwrap_or_default().into());
             lab.set_verify_url(status.pairing.as_ref().map(|pairing| pairing.1.as_str()).unwrap_or_default().into());

@@ -103,6 +103,8 @@ export component Segmented inherits Rectangle {
     border-radius: Theme.radius-sm;
     background: Theme.bg;
     min-height: 32px;
+    // As tall as its buttons: a taller row (a panel heading) centres it instead of stretching it with the toggles left at the top.
+    max-height: self.min-height;
     HorizontalLayout {
         padding: 2px;
         spacing: 2px;

@@ -294,7 +294,18 @@ impl Controller {
             this.error = None;
             this.render_shell();
         })));
-        shell.on_install_update(on(Box::new(|this| this.send(Command::InstallUpdate))));
+        // "Restart and update": Velopack applies the update once the meter has closed and saved the record; the fake feed
+        // (no installed meter) gets the command instead.
+        shell.on_install_update(on(Box::new(|this| {
+            if let UpdateState::Ready { version } = &this.update
+                && crate::updater::restart_into_update()
+            {
+                this.update = UpdateState::Installing { version: version.clone() };
+                this.render_update();
+            } else {
+                this.send(Command::InstallUpdate);
+            }
+        })));
         shell.on_open_url(|url| desktop::open_url(&url));
 
         let meter = app.global::<MeterState>();

@@ -23,6 +23,7 @@ mod merge;
 mod ranking;
 mod ranking_image;
 mod screenshots;
+mod updater;
 #[cfg(test)]
 mod ui_tests;
 
@@ -112,6 +113,8 @@ fn fall_back(renderer: &str, error: &slint::PlatformError) -> ! {
 }
 
 fn main() -> Result<(), slint::PlatformError> {
+    // Velopack's install/update hooks run before anything else (they may end the process).
+    updater::hooks();
     let mut args = std::env::args().skip(1);
     if args.next().as_deref() == Some("--render-ranking") {
         let (input, output) = (args.next().unwrap_or_default(), args.next().unwrap_or_default());
@@ -218,6 +221,9 @@ fn main() -> Result<(), slint::PlatformError> {
         let feed: Box<dyn MeterFeed> = match config {
             Some(config) => {
                 controller.borrow_mut().journal.item_ids = item_ids(&config);
+                updater::watch(|state| {
+                    let _ = slint::invoke_from_event_loop(move || controller::dispatch(feed::FeedEvent::Update(state)));
+                });
                 if let Some(pcap) = &options.replay {
                     let _ = controller.borrow().commands().send(feed::Command::Replay(pcap.clone()));
                 }
@@ -274,6 +280,7 @@ fn main() -> Result<(), slint::PlatformError> {
     }
     drop(_instance);
     desktop::restart_if_asked();
+    updater::apply_on_exit();
     Ok(())
 }
 

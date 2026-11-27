@@ -1,0 +1,4 @@
+# Windows: Npcap's wpcap.dll is delay-loaded, so the meter (and the test binaries) start on a machine without Npcap
+# and say how to install it, instead of failing to start (meter-capture checks for the DLL before any call into it).
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "link-arg=/DELAYLOAD:wpcap.dll", "-C", "link-arg=delayimp.lib"]

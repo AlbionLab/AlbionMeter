@@ -1,0 +1,82 @@
+name: Rust
+# The Rust port (rust/): lint, tests, the release build and the Velopack packages, on Linux and Windows. Packages are
+# workflow artifacts only; nothing here creates a GitHub release.
+on:
+  push:
+    branches: [rust]
+  pull_request:
+    branches: [rust]
+permissions:
+  contents: read
+concurrency:
+  group: rust-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  CARGO_TERM_COLOR: never
+  NPCAP_SDK: https://npcap.com/dist/npcap-sdk-1.15.zip
+  VELOPACK_VERSION: 1.2.161
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            exe: meter-app
+          - os: windows-latest
+            exe: meter-app.exe
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Linux libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libpcap-dev libxkbcommon-dev libwayland-dev libfontconfig1-dev
+      # wpcap.lib to link against; wpcap.dll itself is delay-loaded (rust/.cargo/config.toml), so no Npcap install is needed.
+      - name: Npcap SDK
+        if: runner.os == 'Windows'
+        run: |
+          curl -sSfL "$NPCAP_SDK" -o "$RUNNER_TEMP/npcap-sdk.zip"
+          unzip -q "$RUNNER_TEMP/npcap-sdk.zip" -d "$RUNNER_TEMP/npcap-sdk"
+          echo "LIBPCAP_LIBDIR=$RUNNER_TEMP\\npcap-sdk\\Lib\\x64" >> "$GITHUB_ENV"
+      - name: Clippy
+        run: scripts/ci-run.sh cargo clippy --workspace --all-targets -- -D warnings
+      - name: Tests
+        run: scripts/ci-run.sh cargo test --workspace
+      - name: Release build
+        run: scripts/ci-run.sh cargo build --release -p meter-app
+      - name: Size
+        run: ls -l "target/release/${{ matrix.exe }}" && echo "::notice title=meter-app size (${{ runner.os }})::$(stat -c %s "target/release/${{ matrix.exe }}" 2>/dev/null || wc -c < "target/release/${{ matrix.exe }}") bytes"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: meter-app-${{ runner.os }}
+          path: rust/target/release/${{ matrix.exe }}
+      # Velopack: Setup.exe on Windows, an AppImage on Linux, on the rust-beta channel; built here, never published.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Package
+        run: |
+          dotnet tool install -g vpk --version "$VELOPACK_VERSION"
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          mkdir -p ../package/assets
+          cp "target/release/${{ matrix.exe }}" ../package/
+          cp ../assets/game-data/combat.json ../assets/game-data/maps.json ../package/assets/
+          if [ "$RUNNER_OS" = Windows ]; then icon=../src/AlbionMeter.Server/app.ico; else icon=crates/meter-app/assets/icon.png; fi
+          vpk pack --packId AlbionMeter --packVersion "$version-ci.$GITHUB_RUN_NUMBER" --packTitle "Albion Meter" --packAuthors AlbionLab \
+            --packDir ../package --mainExe "${{ matrix.exe }}" --icon "$icon" --channel rust-beta --outputDir ../releases
+          ls -l ../releases
+          for file in ../releases/*; do echo "::notice title=package ($RUNNER_OS)::$(basename "$file") $(wc -c < "$file") bytes"; done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ runner.os }}
+          path: releases/

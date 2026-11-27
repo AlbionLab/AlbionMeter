@@ -13,6 +13,9 @@ slint = { version = "1.19", default-features = false, features = ["std", "compat
 i-slint-backend-testing = { version = "=1.19.1", optional = true }
 # The ranking picture on the clipboard (Slint's clipboard is text only).
 arboard = { version = "3.6", default-features = false, features = ["image-data", "wayland-data-control"] }
+# Updates and installers (Setup.exe, AppImage), as electron-updater did; the feed is AlbionMeter's GitHub releases on
+# the `rust-beta` channel.
+velopack = { version = "1.2.161", default-features = false }
 meter-core.workspace = true
 meter-runtime.workspace = true
 serde.workspace = true

@@ -62,7 +62,7 @@ jobs:
         # Test threads get 8 MB of stack (2 MB by default): Slint's UI tests build the whole window in a debug build.
         env:
           RUST_MIN_STACK: 8388608
-        run: scripts/ci-run.sh cargo test --workspace ${{ matrix.test_args }}
+        run: scripts/ci-run.sh cargo test --workspace --no-fail-fast
       # A crash in the meter-app tests on Windows prints nothing; the debugger gives its stack.
       - name: Crash stack
         if: failure() && runner.os == 'Windows'

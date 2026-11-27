@@ -1,4 +1,13 @@
 # Windows: Npcap's wpcap.dll is delay-loaded, so the meter (and the test binaries) start on a machine without Npcap
 # and say how to install it, instead of failing to start (meter-capture checks for the DLL before any call into it).
+#
+# pcap 2.5 brings windows-sys 0.36, whose windows.lib imports WaitOnAddress and WakeByAddress* from vertdll.dll (the
+# enclave runtime): every executable that links pcap crashed at its first thread park. Each crate also links
+# synchronization.lib, which comes before its dependencies' libraries, and the three symbols are resolved from the start
+# of the link, so they come from it (meter-app's build.rs does the same for builds that set RUSTFLAGS).
 [target.x86_64-pc-windows-msvc]
-rustflags = ["-C", "link-arg=/DELAYLOAD:wpcap.dll", "-C", "link-arg=delayimp.lib"]
+rustflags = [
+    "-C", "link-arg=/DELAYLOAD:wpcap.dll", "-C", "link-arg=delayimp.lib",
+    "-l", "dylib=synchronization",
+    "-C", "link-arg=/INCLUDE:__imp_WaitOnAddress", "-C", "link-arg=/INCLUDE:__imp_WakeByAddressSingle", "-C", "link-arg=/INCLUDE:__imp_WakeByAddressAll",
+]

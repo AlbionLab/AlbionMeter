@@ -18,7 +18,8 @@ use crate::i18n::{Language, message, t, tf};
 use crate::journal::Journal;
 use crate::merge::Record;
 use crate::ranking::{Metric, contributions, player_names, ranking_text};
-use crate::{AppWindow, BarRow, CaptureState, CatalogRow, CatalogState, DiagRow, LabState, MeterState, SelectOption, Shell, T};
+use crate::ranking_image;
+use crate::{AppWindow, JournalState, BarRow, CaptureState, CatalogRow, CatalogState, DiagRow, LabState, MeterState, SelectOption, Shell, T};
 
 /// The second click of a double click on a record control is dropped (the browser's `event.detail > 1`).
 const DOUBLE_CLICK: Duration = Duration::from_millis(500);
@@ -36,6 +37,21 @@ impl ClickGuard {
         self.last = Some(now);
         !second
     }
+}
+
+/// The compositor keeps the button release of an interactive move or resize, so Slint would go on treating the bar (or
+/// edge) as pressed and send every later press to it: the pointer is let go here.
+fn release_grab(app: &AppWindow) {
+    // After the press is handled (Slint takes the grab when the handler returns), and outside the window so nothing
+    // under the pointer takes the release for a click.
+    let weak = app.as_weak();
+    slint::Timer::single_shot(Duration::ZERO, move || {
+        if let Some(app) = weak.upgrade() {
+            let position = slint::LogicalPosition::new(-1.0, -1.0);
+            app.window().dispatch_event(slint::platform::WindowEvent::PointerReleased { position, button: slint::platform::PointerEventButton::Left });
+            app.window().dispatch_event(slint::platform::WindowEvent::PointerExited);
+        }
+    });
 }
 
 /// Rewrites `model` to `rows`, touching only the rows that changed.
@@ -99,6 +115,19 @@ type Action = Box<dyn Fn(&mut Controller)>;
 type TextAction = Box<dyn Fn(&mut Controller, SharedString)>;
 type FlagAction = Box<dyn Fn(&mut Controller, bool)>;
 
+#[derive(Clone, Copy)]
+pub enum CopyTarget {
+    Meter,
+    Journal,
+}
+
+/// Runs `action` on the installed controller (UI thread).
+pub fn with_controller(action: impl FnOnce(&mut Controller)) {
+    if let Some(controller) = CONTROLLER.with(|slot| slot.borrow().clone()) {
+        action(&mut controller.borrow_mut());
+    }
+}
+
 pub struct Controller {
     app: slint::Weak<AppWindow>,
     commands: Sender<Command>,
@@ -110,11 +139,16 @@ pub struct Controller {
     busy: bool,
     error: Option<String>,
     clicks: ClickGuard,
+    bar_clicks: ClickGuard,
     bars: Rc<VecModel<BarRow>>,
     icons: HashMap<Arc<str>, Option<slint::Image>>,
     /// Icons asked for and not delivered yet (each is asked for once; the cache retries failed downloads itself).
     requested: RefCell<std::collections::HashSet<Arc<str>>>,
     copy_reset: slint::Timer,
+    copy_busy: bool,
+    /// Owns the clipboard while an image copied there is offered (X11 and Wayland need a living owner).
+    image_clipboard: Option<arboard::Clipboard>,
+    icon_paths: HashMap<Arc<str>, std::path::PathBuf>,
     capture: Option<Arc<CaptureStatus>>,
     devices: Option<Arc<DeviceList>>,
     method: String,
@@ -137,6 +171,9 @@ pub struct Controller {
     update: UpdateState,
     /// Whether the language and the window placement are saved (not while taking screenshots).
     pub persist: bool,
+    /// Every window action asked for (drag, resize-…, minimize, …), for the UI tests.
+    #[cfg(test)]
+    pub window_actions: Vec<String>,
     pub journal: Journal,
 }
 
@@ -153,10 +190,14 @@ impl Controller {
             busy: false,
             error: None,
             clicks: ClickGuard::default(),
+            bar_clicks: ClickGuard::default(),
             bars: Rc::new(VecModel::default()),
             icons: HashMap::new(),
             requested: RefCell::default(),
             copy_reset: slint::Timer::default(),
+            copy_busy: false,
+            image_clipboard: None,
+            icon_paths: HashMap::new(),
             capture: None,
             devices: None,
             method: "socket".into(),
@@ -178,6 +219,8 @@ impl Controller {
             storage: String::new(),
             update: UpdateState::Idle,
             persist: true,
+            #[cfg(test)]
+            window_actions: Vec::new(),
             journal,
         }));
         Self::bind(&this, app);
@@ -436,7 +479,12 @@ impl Controller {
             FeedEvent::Dungeon(run) => self.journal.run(run),
             FeedEvent::HistoryMessage { text, error } => self.journal.history_message(text, error),
             FeedEvent::Icon(id, path) => {
-                self.icons.insert(id, slint::Image::load_from_path(&path).ok());
+                self.icon_paths.insert(id.clone(), path.clone());
+                let image = slint::Image::load_from_path(&path).ok();
+                if let Some(image) = &image {
+                    self.journal.add_icon(id.clone(), image.clone());
+                }
+                self.icons.insert(id, image);
                 self.render_meter();
             }
         }
@@ -599,32 +647,33 @@ impl Controller {
         }
     }
 
-    fn clipboard(&self, text: &str) {
+    pub fn clipboard(&self, text: &str) {
         self.with_app(|app| {
             app.set_clipboard(text.into());
             app.invoke_copy_clipboard();
         });
     }
 
-    /// Copies the ranking; the confirmation (or the error) shows under the button and clears itself.
-    fn copy(&mut self, format: &str) {
-        let Some(snapshot) = self.record.snapshot.clone() else { return };
-        let (done, error) = match format {
-            "text" => {
-                self.clipboard(&ranking_text(&snapshot, self.metric));
-                ("text", "")
+    fn set_copy(&self, target: CopyTarget, done: &str, error: &str, busy: bool) {
+        self.with_app(|app| match target {
+            CopyTarget::Meter => {
+                let meter = app.global::<MeterState>();
+                meter.set_copy_done(done.into());
+                meter.set_copy_error(error.into());
+                meter.set_copy_busy(busy);
             }
-            "names" => {
-                self.clipboard(&player_names(&snapshot, self.metric));
-                ("names", "")
+            CopyTarget::Journal => {
+                let journal = app.global::<JournalState>();
+                journal.set_copy_done(done.into());
+                journal.set_copy_error(error.into());
+                journal.set_copy_busy(busy);
             }
-            _ => ("", self.t("Image rendering is unavailable.")),
-        };
-        self.with_app(|app| {
-            let meter = app.global::<MeterState>();
-            meter.set_copy_done(done.into());
-            meter.set_copy_error(error.into());
         });
+    }
+
+    /// The confirmation (or the error) under the Copy button, cleared after 1.8 s (4 s for an error).
+    fn flash_copy(&mut self, target: CopyTarget, done: &str, error: &str) {
+        self.set_copy(target, done, error, false);
         let weak = self.app.clone();
         let wait = if error.is_empty() { Duration::from_millis(1800) } else { Duration::from_secs(4) };
         self.copy_reset.start(slint::TimerMode::SingleShot, wait, move || {
@@ -632,8 +681,61 @@ impl Controller {
                 let meter = app.global::<MeterState>();
                 meter.set_copy_done("".into());
                 meter.set_copy_error("".into());
+                let journal = app.global::<JournalState>();
+                journal.set_copy_done("".into());
+                journal.set_copy_error("".into());
             }
         });
+    }
+
+    fn copy(&mut self, format: &str) {
+        let Some(snapshot) = self.record.snapshot.clone() else { return };
+        self.copy_ranking(snapshot, self.metric, format, CopyTarget::Meter);
+    }
+
+    /// CopyDamage.tsx copy(): the ranking as text, the names, or the picture (rendered off the UI thread).
+    pub fn copy_ranking(&mut self, snapshot: Arc<Snapshot>, metric: Metric, format: &str, target: CopyTarget) {
+        if self.copy_busy || contributions(&snapshot, metric).is_empty() {
+            return;
+        }
+        match format {
+            "text" => {
+                self.clipboard(&ranking_text(&snapshot, metric));
+                self.flash_copy(target, "text", "");
+            }
+            "names" => {
+                self.clipboard(&player_names(&snapshot, metric));
+                self.flash_copy(target, "names", "");
+            }
+            _ => {
+                let card = ranking_image::card(&snapshot, metric, self.language(), &self.icon_paths, desktop::fonts());
+                self.copy_busy = true;
+                self.set_copy(target, "", "", true);
+                std::thread::spawn(move || {
+                    let rendered = ranking_image::render_in_child(&card);
+                    let _ = slint::invoke_from_event_loop(move || {
+                        with_controller(|this| this.image_rendered(rendered, target));
+                    });
+                });
+            }
+        }
+    }
+
+    pub fn image_rendered(&mut self, rendered: Result<(u32, u32, Vec<u8>), String>, target: CopyTarget) {
+        self.copy_busy = false;
+        let result = rendered.map_err(|_| self.t("Image rendering failed.").to_owned()).and_then(|(width, height, rgba)| {
+            let clipboard = match &mut self.image_clipboard {
+                Some(clipboard) => clipboard,
+                None => self.image_clipboard.insert(arboard::Clipboard::new().map_err(|_| self.t("Image clipboard is unavailable in this browser. Use Copy text.").to_owned())?),
+            };
+            clipboard
+                .set_image(arboard::ImageData { width: width as usize, height: height as usize, bytes: rgba.into() })
+                .map_err(|_| t(self.language(), "Could not copy. Try again.").to_owned())
+        });
+        match result {
+            Ok(()) => self.flash_copy(target, "image", ""),
+            Err(error) => self.flash_copy(target, "", &error),
+        }
     }
 
     fn copy_link(&mut self) {
@@ -846,6 +948,8 @@ impl Controller {
     }
 
     fn window_action(&mut self, action: &str) {
+        #[cfg(test)]
+        self.window_actions.push(action.to_owned());
         use slint::winit_030::WinitWindowAccessor;
         use slint::winit_030::winit::window::ResizeDirection;
         let Some(app) = self.app.upgrade() else { return };
@@ -858,8 +962,12 @@ impl Controller {
                 let _ = window.hide();
                 let _ = slint::quit_event_loop();
             }
+            // The compositor moves the window from the press on; a second press soon after (a double click, which the app
+            // never sees as one) maximizes or restores instead.
+            "drag" if !self.bar_clicks.first(Instant::now()) => window.set_maximized(!window.is_maximized()),
             "drag" => {
                 window.with_winit_window(|winit| winit.drag_window());
+                release_grab(&app);
             }
             _ => {
                 let direction = match action.strip_prefix("resize-") {
@@ -874,6 +982,7 @@ impl Controller {
                     _ => return,
                 };
                 window.with_winit_window(|winit| winit.drag_resize_window(direction));
+                release_grab(&app);
             }
         }
         app.global::<Shell>().set_maximized(window.is_maximized());

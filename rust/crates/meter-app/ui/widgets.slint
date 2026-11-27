@@ -38,6 +38,11 @@ export component Button {
         : variant == "danger-solid" ? #2a0806
         : (hot ? Theme.text : Theme.text-2);
     private property <bool> strong: variant == "primary" || variant == "go" || variant == "hold" || variant == "danger-solid";
+    accessible-role: button;
+    accessible-label: text != "" ? text : tooltip;
+    accessible-description: tooltip;
+    accessible-enabled: enabled;
+    accessible-action-default => { if enabled { clicked(); } }
     min-width: max(min-w, layout.preferred-width);
     horizontal-stretch: 0;
     height: h;
@@ -75,6 +80,9 @@ export component LinkButton {
     in property <string> text;
     in property <length> font-size: 13px;
     callback clicked();
+    accessible-role: button;
+    accessible-label: text;
+    accessible-action-default => { clicked(); }
     min-width: label.preferred-width;
     height: label.preferred-height;
     label := Text {
@@ -111,6 +119,12 @@ export component SegButton {
     in property <length> pad: 12px;
     callback clicked();
     private property <color> ink: active ? Theme.accent-ink : touch.has-hover ? Theme.text : Theme.muted;
+    in property <string> label: text;
+    accessible-role: button;
+    accessible-label: label;
+    accessible-checkable: true;
+    accessible-checked: active;
+    accessible-action-default => { clicked(); }
     height: 26px;
     min-width: row.preferred-width;
     Rectangle {
@@ -212,6 +226,14 @@ export component Select {
         if index != selected { changed(options[index].value); }
     }
     in property <length> min-w: 120px;
+    in property <string> label;
+    accessible-role: combobox;
+    accessible-label: label;
+    accessible-value: selected >= 0 ? options[selected].label : placeholder;
+    accessible-enabled: enabled;
+    accessible-expandable: true;
+    accessible-expanded: popup.is-open;
+    accessible-action-default => { show(); }
     height: 32px;
     min-width: min-w;
     opacity: enabled ? 1 : 0.5;
@@ -320,6 +342,11 @@ export component Check {
     in property <bool> checked;
     in property <string> text;
     callback toggled(bool);
+    accessible-role: checkbox;
+    accessible-label: text;
+    accessible-checkable: true;
+    accessible-checked: checked;
+    accessible-action-default => { toggled(!checked); }
     min-height: 18px;
     min-width: row.preferred-width;
     row := HorizontalLayout {
@@ -453,6 +480,7 @@ export component PanelHeading {
 export component TextField inherits Rectangle {
     in-out property <string> text;
     in property <string> placeholder;
+    in property <string> label;
     in property <bool> search;
     in property <int> max-length: 0;
     in property <length> h: 34px;
@@ -485,6 +513,8 @@ export component TextField inherits Rectangle {
         font-size: search ? 12.5px : 13px;
         vertical-alignment: center;
         single-line: true;
+        accessible-label: root.label;
+        accessible-placeholder-text: root.placeholder;
         selection-background-color: #f08a2466;
         edited => {
             if root.max-length > 0 && self.text.character-count > root.max-length { return; }
@@ -516,7 +546,7 @@ export component ShareBar {
             horizontal-stretch: 1;
             Rectangle { x: 0; width: parent.width * clamp(value, 0, 100) / 100; border-radius: 3px; background: root.color; }
         }
-        Text { width: 46px; text: round(value * 10) / 10 + "%"; horizontal-alignment: right; color: Theme.text-2; font-family: Theme.mono; font-size: 12px; vertical-alignment: center; }
+        Text { width: 46px; text: value.to-fixed(1) + "%"; horizontal-alignment: right; color: Theme.text-2; font-family: Theme.mono; font-size: 12px; vertical-alignment: center; }
     }
 }
 
@@ -547,6 +577,8 @@ export component ItemIcon {
     in property <bool> has-icon;
     in property <string> tier;
     in property <length> size: 36px;
+    // The tier drawn over the picture's corner (.inspector-avatar .item-tier) instead of under it.
+    in property <bool> overlay;
     width: size + 2px;
     VerticalLayout {
         spacing: 3px;
@@ -562,7 +594,16 @@ export component ItemIcon {
             if has-icon: Image { width: parent.width; height: parent.height; source: icon; image-fit: contain; }
             if !has-icon: Text { text: "?"; color: Theme.muted; font-size: 12px; }
         }
-        if tier != "": Text { text: tier; color: Theme.text-2; font-family: Theme.mono; font-size: 9.5px; font-weight: 600; horizontal-alignment: center; }
+        if tier != "" && !overlay: Text { text: tier; color: Theme.text-2; font-family: Theme.mono; font-size: 9.5px; font-weight: 600; horizontal-alignment: center; }
+    }
+    if overlay && tier != "": Rectangle {
+        x: size - self.width + 2px;
+        y: (parent.height + size) / 2 - self.height + 2px;
+        width: badge.preferred-width + 4px;
+        height: badge.preferred-height;
+        border-radius: 2px;
+        background: #0c1017e8;
+        badge := Text { text: tier; color: Theme.text-2; font-family: Theme.mono; font-size: 8px; font-weight: 600; }
     }
 }
 

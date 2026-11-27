@@ -91,12 +91,26 @@ struct JsonSnapshot {
     timeline: Vec<JsonPoint>,
 }
 
-#[derive(Deserialize)]
-struct IndexedWeapon {
+/// An item definition: `/api/catalog` indexedWeapons and `/api/items/{index}` (web/src/weapons.ts, ItemIcon.tsx).
+#[derive(Deserialize, Clone)]
+struct ItemDefinition {
     id: String,
     name: String,
     tier: Option<u8>,
+    #[serde(default)]
     enchantment: u8,
+}
+
+impl ItemDefinition {
+    fn tier(&self) -> Option<String> {
+        self.tier.map(|tier| format!("T{tier}.{}", self.enchantment))
+    }
+}
+
+#[derive(Default)]
+struct Lookup {
+    weapons: Vec<ItemDefinition>,
+    items: std::collections::HashMap<i32, ItemDefinition>,
 }
 
 fn values(map: std::collections::HashMap<String, f64>) -> Values {
@@ -104,10 +118,11 @@ fn values(map: std::collections::HashMap<String, f64>) -> Values {
 }
 
 /// weapons.ts: a player's weapon string is matched against the indexed weapons by "Name · T8.3".
-fn player(json: JsonPlayer, weapons: &[IndexedWeapon]) -> Player {
-    let weapon_id = weapons
+fn player(json: JsonPlayer, lookup: &Lookup) -> Player {
+    let weapon_id = lookup
+        .weapons
         .iter()
-        .find(|weapon| weapon.tier.is_some_and(|tier| format!("{} · T{tier}.{}", weapon.name, weapon.enchantment) == json.weapon))
+        .find(|weapon| weapon.tier().is_some_and(|tier| format!("{} · {tier}", weapon.name) == json.weapon))
         .map(|weapon| Arc::from(weapon.id.as_str()));
     Player {
         membership: match json.membership.as_deref() {
@@ -130,7 +145,7 @@ fn player(json: JsonPlayer, weapons: &[IndexedWeapon]) -> Player {
     }
 }
 
-fn snapshot(value: &Value, weapons: &[IndexedWeapon]) -> Option<Snapshot> {
+fn snapshot(value: &Value, lookup: &Lookup) -> Option<Snapshot> {
     let json: JsonSnapshot = serde_json::from_value(value.clone()).ok()?;
     Some(Snapshot {
         id: json.id.into(),
@@ -147,24 +162,27 @@ fn snapshot(value: &Value, weapons: &[IndexedWeapon]) -> Option<Snapshot> {
         event_count: json.event_count,
         total_damage: json.total_damage,
         total_healing: json.total_healing,
-        members: json.members.into_iter().map(|json| player(json, weapons)).collect(),
-        former_members: json.former_members.into_iter().map(|json| player(json, weapons)).collect(),
+        members: json.members.into_iter().map(|json| player(json, lookup)).collect(),
+        former_members: json.former_members.into_iter().map(|json| player(json, lookup)).collect(),
         item_contributions: json
             .item_contributions
             .into_iter()
-            .map(|item| ItemContribution {
+            .map(|item| {
+                let definition = item.item_index.and_then(|index| lookup.items.get(&index));
+                ItemContribution {
                 kind: item.kind.map(Into::into),
                 tier_observed: item.tier_observed.unwrap_or(true),
                 id: item.id.into(),
                 player_id: item.player_id.into(),
                 player_name: item.player_name.into(),
                 item_index: item.item_index,
+                item_id: definition.map(|definition| definition.id.as_str().into()),
                 slot: item.slot.into(),
                 item: item.item.into(),
-                tier: None,
+                tier: definition.and_then(ItemDefinition::tier).map(Into::into),
                 damage: item.damage,
                 healing: item.healing,
-            })
+            }})
             .collect(),
         timeline: json
             .timeline
@@ -301,6 +319,50 @@ fn update(value: &Value) -> UpdateState {
     }
 }
 
+fn summary(value: &Value) -> DungeonSummary {
+    let number = |key: &str| value.get(key).and_then(Value::as_f64).unwrap_or(0.0);
+    DungeonSummary {
+        id: text(value, "id").unwrap_or_default().into(),
+        started_at: text(value, "startedAt").unwrap_or_default().into(),
+        name: text(value, "name").unwrap_or_default().into(),
+        entrance_map_name: text(value, "entranceMapName").unwrap_or_default().into(),
+        mode: text(value, "mode").unwrap_or_default().into(),
+        status: text(value, "status").unwrap_or_default().into(),
+        floors: number("floors") as u32,
+        duration: number("duration"),
+        damage: number("damage"),
+        healing: number("healing"),
+    }
+}
+
+fn dungeon(value: &Value, lookup: &Lookup) -> Option<DungeonRun> {
+    let totals = Arc::new(snapshot(value.get("totals")?, lookup)?);
+    let floors: Vec<DungeonFloor> = value
+        .get("floors")
+        .and_then(Value::as_array)
+        .map(|floors| {
+            floors
+                .iter()
+                .filter_map(|floor| {
+                    Some(DungeonFloor {
+                        id: text(floor, "id")?.into(),
+                        number: floor.get("number").and_then(Value::as_u64)? as u32,
+                        map_id: text(floor, "mapId").unwrap_or_default().into(),
+                        map_name: text(floor, "mapName").unwrap_or_default().into(),
+                        totals: Arc::new(snapshot(floor.get("totals")?, lookup)?),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut summary = summary(value);
+    summary.floors = floors.len() as u32;
+    summary.duration = totals.elapsed_seconds;
+    summary.damage = totals.total_damage;
+    summary.healing = totals.total_healing;
+    Some(DungeonRun { summary, floors, totals })
+}
+
 /// What the UI itself is showing on a screen (the clicks the React side makes).
 #[derive(Default)]
 pub struct Ui {
@@ -308,6 +370,20 @@ pub struct Ui {
     pub metric: String,
     pub language: String,
     pub confirm: String,
+    /// Journal: the floor tab, "player" / "item", the timeline range and a key pressed on the chart.
+    pub floor: u32,
+    pub grouping: String,
+    pub range: String,
+    pub key: String,
+    pub copy_menu: bool,
+    /// The accessible label of the control the pointer rests on.
+    pub hover: String,
+    pub search: String,
+    pub tab: String,
+    /// "damage" / "healing": the screenshot is the copied ranking picture instead of the window.
+    pub card: String,
+    /// How far the main area is scrolled down, in pixels.
+    pub scroll: f32,
 }
 
 pub struct Screen {
@@ -323,7 +399,14 @@ pub fn screen(path: &Path, name: &str) -> Result<Screen, String> {
     let over = root.get("screens").and_then(|screens| screens.get(name)).cloned().ok_or_else(|| format!("no screen {name} in {}", path.display()))?;
     merge(&mut root, &over);
     let folder = path.parent().unwrap_or(Path::new("."));
-    let weapons: Vec<IndexedWeapon> = root.get("catalog").and_then(|catalog| catalog.get("indexedWeapons")).cloned().and_then(|value| serde_json::from_value(value).ok()).unwrap_or_default();
+    let lookup = Lookup {
+        weapons: root.get("catalog").and_then(|catalog| catalog.get("indexedWeapons")).cloned().and_then(|value| serde_json::from_value(value).ok()).unwrap_or_default(),
+        items: root
+            .get("items")
+            .and_then(Value::as_object)
+            .map(|items| items.iter().filter_map(|(index, item)| Some((index.parse().ok()?, serde_json::from_value(item.clone()).ok()?))).collect())
+            .unwrap_or_default(),
+    };
     let mut events = Vec::new();
     let connected = root.get("connected").and_then(Value::as_bool).unwrap_or(true);
     if let Some(version) = root.get("health").and_then(|health| text(health, "version")) {
@@ -338,7 +421,7 @@ pub fn screen(path: &Path, name: &str) -> Result<Screen, String> {
     }
     if connected {
         events.push(FeedEvent::Connection(Connection::Connected));
-        if let Some(snapshot) = root.get("snapshot").filter(|value| value.is_object()).and_then(|value| snapshot(value, &weapons)) {
+        if let Some(snapshot) = root.get("snapshot").filter(|value| value.is_object()).and_then(|value| snapshot(value, &lookup)) {
             events.push(FeedEvent::Snapshot(Arc::new(snapshot)));
         }
         if let Some(value) = root.get("albionlab").filter(|value| value.is_object()) {
@@ -356,9 +439,25 @@ pub fn screen(path: &Path, name: &str) -> Result<Screen, String> {
         if let Some(path) = root.get("storage").and_then(|storage| text(storage, "databasePath")) {
             events.push(FeedEvent::StoragePath(path));
         }
+        if let Some(runs) = root.get("dungeons").and_then(Value::as_array) {
+            events.push(FeedEvent::Dungeons(Arc::new(runs.iter().map(summary).collect())));
+        }
+        if let Some(run) = root.get("dungeon").filter(|value| value.is_object()).and_then(|value| dungeon(value, &lookup)) {
+            events.push(FeedEvent::Dungeon(Arc::new(run)));
+        }
         if let Some(error) = text(&root, "commandError") {
             events.push(FeedEvent::CommandDone(Some(error)));
         }
+    }
+    if let Some(result) = root.get("historyResult").filter(|value| value.is_object()) {
+        // HistoryTransfer.tsx's message for an import.
+        let count = |key: &str| result.get(key).and_then(Value::as_u64).unwrap_or(0);
+        let skipped = count("skippedEncounters") + count("skippedDungeons");
+        let mut text = format!("Imported {} encounters and {} dungeons.", count("importedEncounters"), count("importedDungeons"));
+        if skipped > 0 {
+            text.push_str(&format!(" {skipped} existing records or records over the storage limit were skipped."));
+        }
+        events.push(FeedEvent::HistoryMessage { text, error: false });
     }
     if let Some(value) = root.get("update") {
         events.push(FeedEvent::Update(update(value)));
@@ -372,6 +471,16 @@ pub fn screen(path: &Path, name: &str) -> Result<Screen, String> {
             metric: text(&ui, "metric").unwrap_or_else(|| "damage".into()),
             language: text(&ui, "language").unwrap_or_else(|| "en".into()),
             confirm: text(&ui, "confirm").unwrap_or_default(),
+            floor: ui.get("floor").and_then(Value::as_u64).unwrap_or(0) as u32,
+            grouping: text(&ui, "grouping").unwrap_or_else(|| "player".into()),
+            range: text(&ui, "range").unwrap_or_default(),
+            key: text(&ui, "key").unwrap_or_default(),
+            copy_menu: ui.get("copyMenu").and_then(Value::as_bool).unwrap_or(false),
+            hover: text(&ui, "hover").unwrap_or_default(),
+            search: text(&ui, "search").unwrap_or_default(),
+            tab: text(&ui, "tab").unwrap_or_default(),
+            card: text(&ui, "card").unwrap_or_default(),
+            scroll: ui.get("scroll").and_then(Value::as_f64).unwrap_or(0.0) as f32,
         },
         width: window.get("width").and_then(Value::as_f64).unwrap_or(1280.0) as f32,
         height: window.get("height").and_then(Value::as_f64).unwrap_or(820.0) as f32,

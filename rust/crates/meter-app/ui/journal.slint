@@ -1,5 +1,7 @@
 import { Theme } from "theme.slint";
 import { Shell } from "state.slint";
+import { CopyButton } from "copy.slint";
+import { T } from "i18n.slint";
 import { Icon, Icons } from "icons.slint";
 import { Button, Segmented, SegButton, Select, SelectOption, Panel, PanelHeading, StatCard, StatusPill, Eyebrow, Banner, TextField, ShareBar, ItemIcon, CountBadge } from "widgets.slint";
 
@@ -195,6 +197,10 @@ export global JournalState {
     in property <string> transfer-message;
     in property <bool> transfer-error;
     in property <bool> link-copied;
+    in property <bool> copy-available;
+    in property <bool> copy-busy;
+    in property <string> copy-done;
+    in property <string> copy-error;
 
     callback select-run(string);
     callback select-floor(int);
@@ -222,11 +228,15 @@ export global JournalState {
     callback import-history();
     callback dismiss-transfer();
     callback copy-link();
-    callback copy-ranking(string);
+    // image | text | names, for the shown floor and metric
+    callback copy(string);
 }
 
 component RunEntry inherits Rectangle {
     in property <RunRow> run;
+    accessible-role: button;
+    accessible-label: run.entrance;
+    accessible-action-default => { JournalState.select-run(run.id); }
     min-height: column.preferred-height;
     border-radius: Theme.radius-sm;
     border-width: 1px;
@@ -285,6 +295,10 @@ component RunList inherits Panel {
 
 component FloorTabButton inherits Rectangle {
     in property <FloorTab> tab;
+    accessible-role: AccessibleRole.tab;
+    accessible-label: tab.label;
+    accessible-item-selected: tab.active;
+    accessible-action-default => { JournalState.select-floor(tab.number); }
     height: 34px;
     min-width: row.preferred-width;
     border-radius: Theme.radius-sm;
@@ -334,6 +348,8 @@ component RunHero inherits Panel {
                 alignment: end;
                 Button { y: 0; text: JournalState.exporting ? "Exporting…" : "Export dungeon"; enabled: !JournalState.exporting; clicked => { JournalState.export-run(); } }
                 Button { y: 0; text: JournalState.link-copied ? "Link copied" : "Copy link"; tooltip: "Copy a link to this run"; clicked => { JournalState.copy-link(); } }
+                // React opens the run's /combat path, which the journal shows as the same page: here it scrolls to the chart.
+                if JournalState.has-totals: Button { y: 0; text: "Open combat details"; clicked => { Shell.scroll-y = -560px; } }
             }
         }
         Rectangle {
@@ -401,6 +417,10 @@ component Timeline inherits Rectangle {
             horizontal-alignment: center;
         }
         for line in JournalState.series: Rectangle {
+            x: 0;
+            y: 0;
+            width: plot.width;
+            height: plot.height;
             if line.fill: Path {
                 width: plot.width;
                 height: plot.height;
@@ -543,7 +563,7 @@ component InspectorRow inherits VerticalLayout {
                 width: 33px;
                 Rectangle { width: 2px; background: player.color; }
                 Rectangle { width: 3px; }
-                ItemIcon { size: 26px; icon: player.icon; has-icon: player.has-icon; }
+                ItemIcon { size: 26px; icon: player.icon; has-icon: player.has-icon; tier: player.tier; overlay: true; }
             }
             VerticalLayout {
                 horizontal-stretch: 1;
@@ -630,6 +650,7 @@ component Inspector inherits Rectangle {
                 Select {
                     height: 27px;
                     min-w: 0px;
+                    label: "Analysis scope";
                     selected: JournalState.scope-index;
                     options: [{ value: "interval", label: "Selected interval" }, { value: "record", label: "Entire record" }];
                     changed(value) => { JournalState.scope-changed(value); }
@@ -637,6 +658,7 @@ component Inspector inherits Rectangle {
                 Select {
                     height: 27px;
                     min-w: 0px;
+                    label: "Sort analysis";
                     selected: JournalState.order-index;
                     options: [{ value: "damage", label: "Highest damage" }, { value: "healing", label: "Highest healing" }, { value: "name", label: "Player name" }, { value: "party", label: "Party order" }];
                     changed(value) => { JournalState.order-changed(value); }
@@ -652,6 +674,7 @@ component Inspector inherits Rectangle {
                     h: 27px;
                     text: JournalState.inspector-search;
                     placeholder: "Find a player…";
+                    label: "Find player in analysis";
                     edited(value) => { JournalState.inspector-search-changed(value); }
                 }
             }
@@ -714,7 +737,7 @@ component LoadoutTable {
             Button { text: JournalState.loadout-all ? "Collapse all" : "Expand all"; clicked => { JournalState.toggle-loadout-all(); } }
         }
         Rectangle {
-            height: 38px;
+            height: 37px;
             HorizontalLayout {
                 padding-left: 30px;
                 padding-right: 14px;
@@ -730,11 +753,11 @@ component LoadoutTable {
             Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
         }
         for row in JournalState.loadout: Rectangle {
-            height: row.kind == "player" ? 58px : row.kind == "item" ? 54px : 38px;
+            height: row.kind == "empty" ? 41px : 70px;
             background: touch.has-hover ? Theme.hover : row.kind == "player" ? Theme.surface-2 : transparent;
             if row.kind == "player": Rectangle { y: 0; height: 1px; background: Theme.border-strong; }
             if row.kind != "player": Rectangle { x: 16px; width: 1px; background: Theme.border-strong; }
-            if row.kind == "player": Text { x: 11px; text: "›"; color: row.open ? Theme.accent : Theme.muted; font-size: 14px; vertical-alignment: center; transform-rotation: row.open ? 90deg : 0deg; }
+            if row.kind == "player": Icon { x: 11px; y: (parent.height - self.height) / 2; d: Icons.chevron; size: 11px; stroke: 2.2; color: row.open ? Theme.accent : Theme.muted; transform-rotation: row.open ? 0deg : -90deg; }
             HorizontalLayout {
                 padding-left: 30px;
                 padding-right: 14px;
@@ -774,7 +797,7 @@ component LoadoutTable {
 component FloorsTable {
     VerticalLayout {
         Rectangle {
-            height: 38px;
+            height: 37px;
             HorizontalLayout {
                 padding-left: 14px;
                 padding-right: 14px;
@@ -790,7 +813,7 @@ component FloorsTable {
             Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
         }
         for row in JournalState.floor-rows: Rectangle {
-            height: 52px;
+            height: 57px;
             background: row.selected || touch.has-hover ? Theme.hover : transparent;
             if row.selected: Rectangle { x: 0; width: 3px; background: Theme.accent; }
             HorizontalLayout {
@@ -828,7 +851,7 @@ component ProgressionTable {
             Button { text: JournalState.progression-all ? "Collapse all" : "Expand all"; clicked => { JournalState.toggle-progression-all(); } }
         }
         Rectangle {
-            height: 38px;
+            height: 37px;
             HorizontalLayout {
                 padding-left: 30px;
                 padding-right: 14px;
@@ -838,10 +861,10 @@ component ProgressionTable {
             Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
         }
         for row in JournalState.progression: Rectangle {
-            height: 58px;
+            height: 70px;
             background: touch.has-hover ? Theme.hover : row.kind == "player" ? Theme.surface-2 : transparent;
             if row.kind == "player": Rectangle { y: 0; height: 1px; background: Theme.border-strong; }
-            if row.kind == "player": Text { x: 11px; text: "›"; color: row.open ? Theme.accent : Theme.muted; font-size: 14px; vertical-alignment: center; transform-rotation: row.open ? 90deg : 0deg; }
+            if row.kind == "player": Icon { x: 11px; y: (parent.height - self.height) / 2; d: Icons.chevron; size: 11px; stroke: 2.2; color: row.open ? Theme.accent : Theme.muted; transform-rotation: row.open ? 0deg : -90deg; }
             if row.kind != "player": Rectangle { x: 16px; width: 1px; background: Theme.border-strong; }
             HorizontalLayout {
                 padding-left: 30px;
@@ -889,6 +912,8 @@ component Section inherits Panel {
 // HistoryTransfer.tsx: export every record, or import an exported file.
 component HistoryTransfer inherits VerticalLayout {
     spacing: 10px;
+    // .history-transfer { margin-bottom: 12px }
+    padding-bottom: 12px;
     HorizontalLayout {
         alignment: end;
         spacing: 8px;
@@ -924,6 +949,7 @@ component ChartSection inherits Panel {
             Select {
                 width: 110px;
                 min-w: 0px;
+                label: "Dungeon timeline grouping";
                 selected: JournalState.grouping-index;
                 options: [{ value: "player", label: "By player" }, { value: "item", label: "By item", disabled: !JournalState.item-grouping }];
                 changed(value) => { JournalState.grouping-changed(value); }
@@ -931,6 +957,7 @@ component ChartSection inherits Panel {
             Select {
                 width: 70px;
                 min-w: 0px;
+                label: "Dungeon timeline resolution";
                 selected: JournalState.resolution-index;
                 options: [{ value: "1", label: "1s" }, { value: "5", label: "5s" }, { value: "10", label: "10s" }, { value: "30", label: "30s" }, { value: "60", label: "1m" }];
                 changed(value) => { JournalState.resolution-changed(value); }
@@ -938,9 +965,17 @@ component ChartSection inherits Panel {
             Select {
                 width: 120px;
                 min-w: 0px;
+                label: "Dungeon timeline range";
                 selected: JournalState.range-index;
                 options: [{ value: "30", label: "Last 30s" }, { value: "120", label: "Last 2m" }, { value: "600", label: "Last 10m" }, { value: "0", label: "Full dungeon" }];
                 changed(value) => { JournalState.range-changed(value); }
+            }
+            CopyButton {
+                available: JournalState.copy-available;
+                busy: JournalState.copy-busy;
+                copied: JournalState.copy-done != "";
+                metric: JournalState.metric;
+                copy(format) => { JournalState.copy(format); }
             }
         }
         if side: HorizontalLayout {
@@ -982,6 +1017,25 @@ component ChartSection inherits Panel {
                 }
             }
         }
+    }
+    private property <string> toast: JournalState.copy-error != "" ? JournalState.copy-error
+        : JournalState.copy-done == "image" ? T.s("Ranking copied as image")
+        : JournalState.copy-done == "text" ? T.s("Ranking copied as text")
+        : JournalState.copy-done == "names" ? T.s("Player names copied")
+        : JournalState.copy-busy ? T.s("Preparing image…") : "";
+    if toast != "": Rectangle {
+        x: parent.width - 16px - self.width;
+        y: 47px;
+        width: min(300px, label.preferred-width + 20px);
+        height: label.preferred-height + 14px;
+        border-width: 1px;
+        border-radius: Theme.radius-sm;
+        border-color: JournalState.copy-error != "" ? #7f1d1d : Theme.border-strong;
+        background: Theme.surface-2;
+        drop-shadow-blur: 12px;
+        drop-shadow-offset-y: 5px;
+        drop-shadow-color: #00000088;
+        label := Text { width: parent.width - 20px; text: toast; color: JournalState.copy-error != "" ? #fca5a5 : Theme.text-2; font-size: 12px; wrap: word-wrap; }
     }
 }
 

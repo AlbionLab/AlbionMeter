@@ -9,6 +9,7 @@ import { CaptureView } from "capture.slint";
 import { GameView } from "library.slint";
 import { JournalView, JournalState } from "journal.slint";
 
+export { RankingCard, CardRow, CardStat } from "ranking.slint";
 export { Theme, T, Shell, MeterState, LabState, CaptureState, CatalogState, JournalState }
 
 // The frameless window of desktop/main.js (820×560 minimum) holding the whole of web/src/main.tsx.
@@ -44,6 +45,7 @@ export component AppWindow inherits Window {
             vertical-stretch: 1;
             content-width: self.visible-width;
             content-height: content.preferred-height;
+            viewport-y <=> Shell.scroll-y;
             content := VerticalLayout {
                 width: scroll.visible-width;
                 padding-left: 20px;

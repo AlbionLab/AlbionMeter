@@ -116,6 +116,7 @@ export component CaptureView inherits VerticalLayout {
                     Select {
                         horizontal-stretch: 1;
                         enabled: !locked;
+                        label: T.s("Capture method");
                         selected: CaptureState.method-index;
                         options: CaptureState.methods;
                         changed(value) => { CaptureState.method-changed(value); }
@@ -123,6 +124,7 @@ export component CaptureView inherits VerticalLayout {
                     Select {
                         horizontal-stretch: 1;
                         enabled: !locked;
+                        label: T.s("Capture interface");
                         selected: CaptureState.device-index;
                         placeholder: T.s("Select network interface");
                         options: CaptureState.devices;

@@ -58,9 +58,16 @@ fn plural(count: usize, one: &str, many: &str) -> String {
     format!("{count} {}", if count == 1 { one } else { many })
 }
 
-/// "2026-11-20T18:04:05Z" as "2026-11-20 18:04:05".
-fn when(iso: &str) -> String {
-    iso.get(..19).map_or_else(|| iso.to_owned(), |text| text.replace('T', " "))
+/// new Date(iso).toLocaleString(): "11/26/2026, 8:00:00 PM" in English, "26/11/2026, 20:00:00" in Portuguese (UTC).
+fn when(language: Language, iso: &str) -> String {
+    let number = |range: std::ops::Range<usize>| iso.get(range).and_then(|part| part.parse::<u32>().ok());
+    let (Some(year), Some(month), Some(day), Some(hour), Some(minute), Some(second)) = (number(0..4), number(5..7), number(8..10), number(11..13), number(14..16), number(17..19)) else {
+        return iso.to_owned();
+    };
+    match language {
+        Language::En => format!("{month}/{day}/{year}, {}:{minute:02}:{second:02} {}", if hour % 12 == 0 { 12 } else { hour % 12 }, if hour < 12 { "AM" } else { "PM" }),
+        Language::Pt => format!("{day:02}/{month:02}/{year}, {hour:02}:{minute:02}:{second:02}"),
+    }
 }
 
 /// sourceItems.ts: the contributions of one item (per player, slot and item, or family when the tier was not observed).
@@ -198,6 +205,7 @@ pub struct Journal {
     progression_open: Option<HashSet<String>>,
     exporting: bool,
     link_reset: slint::Timer,
+    icons: HashMap<Arc<str>, slint::Image>,
     run_rows: Rc<VecModel<RunRow>>,
     tabs: Rc<VecModel<FloorTab>>,
     y_labels: Rc<VecModel<AxisLabel>>,
@@ -238,6 +246,7 @@ impl Journal {
             progression_open: None,
             exporting: false,
             link_reset: slint::Timer::default(),
+            icons: HashMap::new(),
             run_rows: Rc::default(),
             tabs: Rc::default(),
             y_labels: Rc::default(),
@@ -427,6 +436,15 @@ impl Journal {
         }));
         state.on_dismiss_transfer(on(|journal| journal.with(|state| state.set_transfer_message("".into()))));
         let weak = Rc::downgrade(this);
+        state.on_copy(move |format| {
+            let Some(this) = weak.upgrade() else { return };
+            let mut controller = this.borrow_mut();
+            let copied = controller.journal.totals().cloned().map(|totals| (totals, controller.journal.metric));
+            if let Some((totals, metric)) = copied {
+                controller.copy_ranking(totals, metric, &format, crate::controller::CopyTarget::Journal);
+            }
+        });
+        let weak = Rc::downgrade(this);
         state.on_copy_link(move || {
             let Some(this) = weak.upgrade() else { return };
             let controller = this.borrow();
@@ -445,6 +463,34 @@ impl Journal {
                 }
             });
         });
+    }
+
+    /// An icon from the icon cache, or "?" (`false`) while it is missing.
+    fn icon(&self, id: Option<&Arc<str>>) -> (slint::Image, bool) {
+        id.and_then(|id| self.icons.get(id)).map_or_else(|| (slint::Image::default(), false), |image| (image.clone(), true))
+    }
+
+    /// A player's weapon by name (weapons.ts), with its tier when the catalog knows it.
+    fn weapon(&self, player: &Player) -> (slint::Image, bool, String) {
+        let (icon, has_icon) = self.icon(player.weapon_id.as_ref());
+        let tier = player.weapon_id.as_ref().and_then(|_| player.weapon.rsplit(" · ").next()).filter(|tier| tier.starts_with('T')).unwrap_or_default();
+        (icon, has_icon, tier.to_owned())
+    }
+
+    /// DungeonLoadout.tsx: the main-hand item seen in combat when the weapon was never observed, else the weapon.
+    fn identity(&self, player: &Player, seen: Option<&(SourceItem, String)>) -> (slint::Image, bool, String) {
+        match seen {
+            Some((item, _)) => {
+                let (icon, has_icon) = self.icon(item.first.item_id.as_ref());
+                (icon, has_icon, item_tier(item))
+            }
+            None => self.weapon(player),
+        }
+    }
+
+    pub fn add_icon(&mut self, id: Arc<str>, image: slint::Image) {
+        self.icons.insert(id, image);
+        self.render();
     }
 
     fn with(&self, apply: impl FnOnce(&JournalState)) {
@@ -532,7 +578,7 @@ impl Journal {
                 line: format!("{} · {} · {}", run.name, plural(run.floors as usize, "floor", "floors"), duration(run.duration)).into(),
                 damage: compact(language, run.damage).into(),
                 healing: compact(language, run.healing).into(),
-                started: when(&run.started_at).into(),
+                started: when(language, &run.started_at).into(),
                 active: active.as_ref() == Some(&run.id),
             }),
         );
@@ -583,8 +629,9 @@ impl Journal {
             state.set_run_name(run.summary.name.as_ref().into());
             state.set_run_title(run.summary.entrance_map_name.as_ref().into());
             state.set_run_status(run.summary.status.as_ref().into());
-            state.set_run_meta(format!("Started {} · {} · {}", when(&run.summary.started_at), plural(run.floors.len(), "floor", "floors"), run.summary.mode).into());
+            state.set_run_meta(format!("Started {} · {} · {}", when(language, &run.summary.started_at), plural(run.floors.len(), "floor", "floors"), run.summary.mode).into());
             state.set_has_totals(totals.is_some());
+            state.set_copy_available(totals.as_ref().is_some_and(|totals| !crate::ranking::contributions(totals, metric).is_empty()));
             if let Some(totals) = &totals {
                 state.set_damage(compact(language, totals.total_damage).into());
                 state.set_damage_note(share_note(totals.total_damage, run.totals.total_damage).into());
@@ -602,8 +649,6 @@ impl Journal {
             state.set_loadout_note(format!("{place} · Ranked by {}", metric.name()).into());
             state.set_floors_note(format!("Share of dungeon {} · Click a floor to inspect it", metric.name()).into());
             state.set_progression_note(format!("{} per player and item on each floor", if metric == Metric::Damage { "Damage" } else { "Healing" }).into());
-            state.set_resolution_index(RESOLUTIONS.iter().position(|value| *value == self.resolution).unwrap_or(0) as i32);
-            state.set_range_index(RANGES.iter().position(|value| *value == self.range).unwrap_or(1) as i32);
         });
         self.render_tables();
         self.render_chart();
@@ -791,6 +836,8 @@ impl Journal {
             state.set_no_players(has_data && keys.is_empty());
             state.set_series_legend(can_inspect && by_item);
             state.set_grouping_index(if by_item { 1 } else { 0 });
+            state.set_resolution_index(RESOLUTIONS.iter().position(|value| *value == resolution).unwrap_or(0) as i32);
+            state.set_range_index(RANGES.iter().position(|value| *value == self.range).unwrap_or(1) as i32);
             state.set_empty_title(if totals.event_count == 0 { "Waiting for combat".into() } else { format!("No {} recorded", metric.name()) }.into());
             state.set_empty_text(
                 if live {
@@ -825,10 +872,10 @@ impl Journal {
         let seconds = if record { totals.elapsed_seconds } else { (totals.elapsed_seconds - point.second as f64).clamp(0.0, resolution as f64) };
         players.retain(|player| player.name.to_lowercase().contains(&self.search));
         match self.order {
-            Order::Name => players.sort_by(|a, b| a.name.cmp(&b.name)),
+            Order::Name => players.sort_by(|a, b| crate::ranking::name_order(&a.name, &b.name)),
             Order::Damage | Order::Healing => {
                 let kind = if self.order == Order::Damage { Metric::Damage } else { Metric::Healing };
-                players.sort_by(|a, b| value(b, kind).total_cmp(&value(a, kind)).then_with(|| a.name.cmp(&b.name)));
+                players.sort_by(|a, b| value(b, kind).total_cmp(&value(a, kind)).then_with(|| crate::ranking::name_order(&a.name, &b.name)));
             }
             Order::Party => {}
         }
@@ -857,19 +904,26 @@ impl Journal {
                         name: item.first.item.as_ref().into(),
                         sources: sources.into(),
                         value: precise(language, *item_value).into(),
-                        icon: Default::default(),
-                        has_icon: false,
-                        tier: item.first.tier.as_deref().filter(|_| item.first.tier_observed).unwrap_or_default().into(),
+                        icon: self.icon(item.first.item_id.as_ref()).0,
+                        has_icon: self.icon(item.first.item_id.as_ref()).1,
+                        tier: item_tier(item).into(),
                     }
                 })
                 .collect();
+            let (icon, has_icon, tier) = match contributions.first() {
+                Some((primary, _)) => {
+                    let (icon, has_icon) = self.icon(primary.first.item_id.as_ref());
+                    (icon, has_icon, item_tier(primary))
+                }
+                None => self.weapon(player),
+            };
             InspectorPlayer {
                 id: player.id.as_ref().into(),
                 name: player.name.as_ref().into(),
                 color: color(&player.color),
-                icon: Default::default(),
-                has_icon: false,
-                tier: "".into(),
+                icon,
+                has_icon,
+                tier: tier.into(),
                 damage: precise(language, value(player, Metric::Damage)).into(),
                 healing: precise(language, value(player, Metric::Healing)).into(),
                 rate: format!("{} {unit}", precise(language, rate(amount, seconds))).into(),
@@ -912,6 +966,7 @@ impl Journal {
                 let own = sorted(items.get(&*member.id).cloned().unwrap_or_default(), metric);
                 let seen = combat_weapon(&member.weapon, &own);
                 let is_open = open.contains(&*member.id);
+                let identity = self.identity(member, seen.as_ref());
                 rows.push(LoadoutRow {
                     id: member.id.as_ref().into(),
                     kind: "player".into(),
@@ -928,9 +983,9 @@ impl Journal {
                     healing_share: member.healing_share as f32,
                     healing_bar: true,
                     hps: precise(language, member.encounter_hps).into(),
-                    icon: Default::default(),
-                    has_icon: false,
-                    tier: seen.as_ref().and_then(|seen| seen.0.first.tier.as_deref().filter(|_| seen.0.first.tier_observed)).unwrap_or_default().into(),
+                    icon: identity.0,
+                    has_icon: identity.1,
+                    tier: identity.2.into(),
                     bar_color: color(&member.color),
                 });
                 if !is_open {
@@ -954,9 +1009,9 @@ impl Journal {
                         healing_share: if member.healing > 0.0 { (item.healing / member.healing * 100.0) as f32 } else { 0.0 },
                         healing_bar: item.healing > 0.0,
                         hps: if item.healing != 0.0 { precise(language, rate(item.healing, seconds)) } else { String::new() }.into(),
-                        icon: Default::default(),
-                        has_icon: false,
-                        tier: item.first.tier.as_deref().filter(|_| item.first.tier_observed).unwrap_or_default().into(),
+                        icon: self.icon(item.first.item_id.as_ref()).0,
+                        has_icon: self.icon(item.first.item_id.as_ref()).1,
+                        tier: item_tier(item).into(),
                         bar_color: faded,
                     });
                 }
@@ -988,6 +1043,7 @@ impl Journal {
             let own = items.get(&*member.id).cloned().unwrap_or_default();
             let seen = combat_weapon(&member.weapon, &own);
             let is_open = open.contains(&*member.id);
+            let identity = self.identity(member, seen.as_ref());
             let mut cells: Vec<Cell> = floors
                 .iter()
                 .map(|(floor, _)| {
@@ -1008,9 +1064,9 @@ impl Journal {
                 name: member.name.as_ref().into(),
                 sub: seen.as_ref().map_or(&*member.weapon, |seen| seen.1.as_str()).into(),
                 cells: ModelRc::new(VecModel::from(cells)),
-                icon: Default::default(),
-                has_icon: false,
-                tier: "".into(),
+                icon: identity.0,
+                has_icon: identity.1,
+                tier: identity.2.into(),
             });
             if !is_open {
                 continue;
@@ -1035,9 +1091,9 @@ impl Journal {
                     name: item.first.item.as_ref().into(),
                     sub: slot_name(&item.first.slot).into(),
                     cells: ModelRc::new(VecModel::from(cells)),
-                    icon: Default::default(),
-                    has_icon: false,
-                    tier: item.first.tier.as_deref().filter(|_| item.first.tier_observed).unwrap_or_default().into(),
+                    icon: self.icon(item.first.item_id.as_ref()).0,
+                    has_icon: self.icon(item.first.item_id.as_ref()).1,
+                    tier: item_tier(&item).into(),
                 });
             }
         }
@@ -1049,6 +1105,11 @@ impl Journal {
             state.set_progression_all(all);
         });
     }
+}
+
+/// ItemIcon.tsx: the tier under an item's picture, when the item's tier was observed.
+fn item_tier(item: &SourceItem) -> String {
+    item.first.tier.as_deref().filter(|_| item.first.tier_observed).unwrap_or_default().to_owned()
 }
 
 fn items_by_player(snapshot: &Snapshot) -> HashMap<String, Vec<SourceItem>> {
@@ -1106,6 +1167,13 @@ fn toggle_all(open: &mut Option<HashSet<String>>, ids: &[String]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dates_follow_to_locale_string() {
+        assert_eq!(when(Language::En, "2026-11-26T20:00:00.000Z"), "11/26/2026, 8:00:00 PM");
+        assert_eq!(when(Language::En, "2026-11-26T00:05:09Z"), "11/26/2026, 12:05:09 AM");
+        assert_eq!(when(Language::Pt, "2026-11-26T20:00:00.000Z"), "26/11/2026, 20:00:00");
+    }
 
     #[test]
     fn reveal_matches_timeline_navigation() {

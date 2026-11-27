@@ -1,0 +1,105 @@
+import { Theme } from "theme.slint";
+import { Icon, Icons } from "icons.slint";
+import { T } from "i18n.slint";
+
+component CopyOption inherits Rectangle {
+    in property <string> icon;
+    in property <string> label;
+    in property <string> hint;
+    callback clicked();
+    accessible-role: button;
+    accessible-label: label;
+    accessible-description: hint;
+    accessible-action-default => { clicked(); }
+    min-height: column.preferred-height + 16px;
+    border-radius: 7px;
+    background: touch.has-hover ? Theme.surface-3 : transparent;
+    HorizontalLayout {
+        padding: 8px;
+        spacing: 10px;
+        Icon { d: icon; size: 16px; color: touch.has-hover ? Theme.accent : Theme.muted; y: 10px; }
+        column := VerticalLayout {
+            spacing: 2px;
+            Text { text: label; color: Theme.text; font-size: 13px; font-weight: 600; }
+            Text { text: hint; color: Theme.muted; font-size: 11.5px; wrap: word-wrap; }
+        }
+    }
+    touch := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+// web/src/CopyDamage.tsx: one Copy button and a menu of what to copy (the ranking as an image or as text, or the
+// names). The button keeps its size; only its icon changes while the image renders and after copying.
+export component CopyButton {
+    in property <bool> available;
+    in property <bool> busy;
+    in property <bool> copied;
+    // damage | healing
+    in property <string> metric: "damage";
+    callback copy(string);
+    // Opens the menu when it turns true (screenshots of the open menu).
+    in property <bool> request-open;
+    changed request-open => { if request-open { show-menu(); } }
+    private property <string> title: T.s(metric == "damage" ? "Copy total damage" : "Copy total healing");
+    private property <bool> open: menu.is-open;
+    private property <bool> hot: (touch.has-hover || open) && available;
+    public function show-menu() {
+        if available && !busy { menu.show(); }
+    }
+    accessible-role: button;
+    accessible-label: T.s("Copy");
+    accessible-description: title;
+    accessible-enabled: available;
+    accessible-expandable: true;
+    accessible-expanded: open;
+    accessible-action-default => { show-menu(); }
+    height: 32px;
+    min-width: row.preferred-width;
+    Rectangle {
+        background: hot ? Theme.surface-3 : Theme.surface-2;
+        border-width: 1px;
+        border-color: hot ? Theme.border-hover : Theme.border-strong;
+        border-radius: Theme.radius-sm;
+        opacity: available ? 1 : 0.45;
+        row := HorizontalLayout {
+            padding-left: 9px;
+            padding-right: 10px;
+            spacing: 6px;
+            Icon { d: copied ? Icons.check : Icons.copy; size: 15px; color: copied ? Theme.good : hot ? Theme.text : Theme.text-2; opacity: busy ? 0.3 : 1; y: (parent.height - self.height) / 2; }
+            Text { text: T.s("Copy"); color: hot ? Theme.text : Theme.text-2; font-size: 12.5px; font-weight: 500; vertical-alignment: center; }
+            Icon { d: Icons.chevron; size: 13px; color: Theme.muted; y: (parent.height - self.height) / 2; transform-rotation: open ? 180deg : 0deg; }
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: available ? pointer : default;
+        clicked => { if open { menu.close(); } else { show-menu(); } }
+    }
+    menu := PopupWindow {
+        x: root.width - 290px;
+        y: root.height + 6px;
+        width: 290px;
+        close-policy: close-on-click-outside;
+        Rectangle {
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            border-radius: 10px;
+            background: Theme.surface-2;
+            drop-shadow-blur: 20px;
+            drop-shadow-offset-y: 9px;
+            drop-shadow-color: #00000099;
+            VerticalLayout {
+                padding: 6px;
+                spacing: 2px;
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    padding-top: 6px;
+                    padding-bottom: 4px;
+                    Text { text: title.to-uppercase(); color: Theme.muted; font-size: 11px; font-weight: 600; letter-spacing: 0.44px; }
+                }
+                CopyOption { icon: Icons.image; label: T.s("Ranking as image"); hint: T.s("The ranking with weapons and bars, ready to paste"); clicked => { menu.close(); root.copy("image"); } }
+                CopyOption { icon: Icons.list; label: T.s("Ranking as text"); hint: T.s("One line per player, the format other meters share in chat"); clicked => { menu.close(); root.copy("text"); } }
+                CopyOption { icon: Icons.users; label: T.s("Player names"); hint: T.s("Only the names, one per line, in ranking order"); clicked => { menu.close(); root.copy("names"); } }
+            }
+        }
+    }
+}

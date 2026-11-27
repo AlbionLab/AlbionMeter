@@ -23,6 +23,8 @@ export global Shell {
     // layout decides.
     in-out property <length> window-width: 1280px;
     in-out property <length> window-height: 820px;
+    // The main area's scroll offset (≤ 0), shared so a screen can be compared further down.
+    in-out property <length> scroll-y;
     in-out property <string> view: "meter";
     // connecting | connected | reconnecting | disconnected
     in property <string> connection: "connecting";
@@ -55,8 +57,9 @@ export global MeterState {
     // "", reset, end, disconnect
     in-out property <string> confirm;
     in property <bool> copy-available;
-    in property <bool> copy-busy;
-    in property <string> copy-done;
+    in property <bool> copy-menu;
+    in-out property <bool> copy-busy;
+    in-out property <string> copy-done;
     in property <string> copy-error;
     // Capture notice
     in property <bool> notice-failed;

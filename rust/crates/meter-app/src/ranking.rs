@@ -40,11 +40,16 @@ impl Metric {
     }
 }
 
+/// String.prototype.localeCompare, closely enough for player names: case-insensitive first, then by case.
+pub fn name_order(a: &str, b: &str) -> std::cmp::Ordering {
+    a.to_lowercase().cmp(&b.to_lowercase()).then_with(|| a.cmp(b))
+}
+
 /// Current and former members once each (the current entry wins), highest first, then by name.
 pub fn contributions(snapshot: &Snapshot, metric: Metric) -> Vec<&Player> {
     let mut players: Vec<&Player> = snapshot.members.iter().collect();
     players.extend(snapshot.former_members.iter().filter(|former| !snapshot.members.iter().any(|member| member.id == former.id)));
-    players.sort_by(|a, b| metric.of(b).total_cmp(&metric.of(a)).then_with(|| a.name.cmp(&b.name)));
+    players.sort_by(|a, b| metric.of(b).total_cmp(&metric.of(a)).then_with(|| name_order(&a.name, &b.name)));
     players
 }
 

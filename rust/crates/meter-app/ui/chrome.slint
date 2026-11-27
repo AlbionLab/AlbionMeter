@@ -8,7 +8,11 @@ import { Button, Segmented, SegButton, Spinner } from "widgets.slint";
 component WindowButton {
     in property <bool> close;
     in property <length> w: 46px;
+    in property <string> label;
     callback clicked();
+    accessible-role: button;
+    accessible-label: label;
+    accessible-action-default => { clicked(); }
     width: w;
     Rectangle {
         background: touch.has-hover ? (close ? #e81123 : #ffffff10) : transparent;
@@ -23,11 +27,13 @@ export component WindowControls inherits HorizontalLayout {
     in property <bool> narrow;
     in property <bool> can-maximize: true;
     min := WindowButton {
+        label: T.s("Minimize");
         w: narrow ? 40px : 46px;
         clicked => { Shell.window-action("minimize"); }
         Path { width: 10px; height: 10px; viewbox-width: 10; viewbox-height: 10; commands: "M0 5h10"; stroke: min.ink; stroke-width: 1px; }
     }
     if can-maximize: max := WindowButton {
+        label: T.s(Shell.maximized ? "Restore" : "Maximize");
         w: narrow ? 40px : 46px;
         clicked => { Shell.window-action("maximize"); }
         if Shell.maximized: Path { width: 10px; height: 10px; viewbox-width: 10; viewbox-height: 10; commands: "M2.5 2.5V.5h7v7h-2M.5 2.5h7v7h-7z"; stroke: max.ink; stroke-width: 1px; fill: transparent; }
@@ -35,6 +41,7 @@ export component WindowControls inherits HorizontalLayout {
     }
     close := WindowButton {
         close: true;
+        label: T.s("Close");
         w: narrow ? 40px : 46px;
         clicked => { Shell.window-action("close"); }
         Path { width: 10px; height: 10px; viewbox-width: 10; viewbox-height: 10; commands: "M0 0l10 10M10 0L0 10"; stroke: close.ink; stroke-width: 1.1px; }
@@ -44,8 +51,9 @@ export component WindowControls inherits HorizontalLayout {
 // The top bar of main.tsx: brand and version, the views, the language, the record state and the window controls. The
 // empty parts of the bar move the window (it has no system frame), and a double click maximizes it.
 export component Header inherits Rectangle {
-    // The narrow-window variants of styles.css (≤780px without nav labels, ≤560px without the brand name) never apply:
-    // the window is at least 820px wide.
+    // The views lose their labels below 1000 px so the window controls stay inside the bar down to the 820 px minimum
+    // (the web bar overflows there and cuts off maximize and close; styles.css only drops the labels at ≤780 px).
+    private property <bool> compact: Shell.window-width < 1000px;
     private property <string> status: Shell.record-status;
     private property <string> pill: Shell.connection != "connected" ? "warn" : status == "running" ? "live" : status == "paused" ? "warn" : "off";
     height: 52px;
@@ -54,7 +62,6 @@ export component Header inherits Rectangle {
         pointer-event(event) => {
             if event.kind == PointerEventKind.down && event.button == PointerEventButton.left { Shell.window-action("drag"); }
         }
-        double-clicked => { Shell.window-action("maximize"); }
     }
     Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
     HorizontalLayout {
@@ -85,10 +92,10 @@ export component Header inherits Rectangle {
         Segmented {
             y: (parent.height - self.height) / 2;
             height: 32px;
-            SegButton { icon: Icons.activity; text: T.s("Meter"); active: Shell.view == "meter"; clicked => { Shell.view = "meter"; } }
-            SegButton { icon: Icons.database; text: T.s("Capture"); active: Shell.view == "capture"; clicked => { Shell.view = "capture"; } }
-            SegButton { icon: Icons.sword; text: T.s("Game data"); active: Shell.view == "game"; clicked => { Shell.view = "game"; } }
-            if Shell.journal-enabled: SegButton { icon: Icons.layers; text: "Dungeons"; active: Shell.view == "journal"; clicked => { Shell.view = "journal"; } }
+            SegButton { icon: Icons.activity; text: compact ? "" : T.s("Meter"); label: T.s("Meter"); pad: compact ? 10px : 12px; active: Shell.view == "meter"; clicked => { Shell.view = "meter"; } }
+            SegButton { icon: Icons.database; text: compact ? "" : T.s("Capture"); label: T.s("Capture"); pad: compact ? 10px : 12px; active: Shell.view == "capture"; clicked => { Shell.view = "capture"; } }
+            SegButton { icon: Icons.sword; text: compact ? "" : T.s("Game data"); label: T.s("Game data"); pad: compact ? 10px : 12px; active: Shell.view == "game"; clicked => { Shell.view = "game"; } }
+            if Shell.journal-enabled: SegButton { icon: Icons.layers; text: compact ? "" : "Dungeons"; label: "Dungeons"; pad: compact ? 10px : 12px; active: Shell.view == "journal"; clicked => { Shell.view = "journal"; } }
         }
         Segmented {
             y: (parent.height - self.height) / 2;

@@ -1,5 +1,8 @@
 //! Albion Meter: one native process with a Slint UI (see rust/README.md).
 //!
+//! The renderer is the software one unless `--renderer femtovg`, `ALBION_METER_RENDERER=femtovg` or `"renderer":
+//! "femtovg"` in settings.json asks for OpenGL; if it fails to start, the other one is tried.
+//!
 //! `--fake` runs the whole UI on an animated fake fight until the engine is wired in (`--fake-idle`: waiting for Play). Other flags: `--software` (no
 //! OpenGL), `--fake-update` (an update downloads and becomes ready), `--view meter|capture|game|journal`, `--journal`
 //! (shows the dungeon journal tab), `--lang en|pt`, `--screenshots <dir>` (saves a PNG of every screen, then quits).
@@ -17,7 +20,10 @@ mod i18n;
 mod journal;
 mod merge;
 mod ranking;
+mod ranking_image;
 mod screenshots;
+#[cfg(test)]
+mod ui_tests;
 
 use std::rc::Rc;
 use std::sync::mpsc;
@@ -35,6 +41,7 @@ struct Options {
     fake: bool,
     idle: bool,
     software: bool,
+    renderer: Option<String>,
     update: bool,
     journal: bool,
     view: Option<String>,
@@ -56,6 +63,7 @@ fn options() -> Options {
                 options.idle = true;
             }
             "--software" => options.software = true,
+            "--renderer" => options.renderer = args.next(),
             "--fake-update" => options.update = true,
             "--journal" => options.journal = true,
             "--view" => options.view = args.next(),
@@ -70,22 +78,40 @@ fn options() -> Options {
     options
 }
 
-/// femtovg (OpenGL) first; the software renderer when there is no usable OpenGL driver or when asked for.
-fn select_backend(software: bool) {
-    let selector = |renderer: &str| slint::BackendSelector::new().backend_name("winit".into()).renderer_name(renderer.into()).select();
-    if software || std::env::var_os("SLINT_BACKEND").is_some() {
-        if std::env::var_os("SLINT_BACKEND").is_none() {
-            let _ = selector("software");
-        }
-        return;
+/// The renderer of the winit backend (`desktop::renderer`). A renderer that cannot start makes the meter start again
+/// with the other one; the backend is chosen once per process, so that is a new process.
+fn select_backend(renderer: &str) -> Result<(), slint::PlatformError> {
+    if std::env::var_os("SLINT_BACKEND").is_some() {
+        return Ok(());
     }
-    if let Err(error) = selector("femtovg") {
-        eprintln!("OpenGL renderer unavailable ({error}); using the software renderer");
-        let _ = selector("software");
+    slint::BackendSelector::new().backend_name("winit".into()).renderer_name(renderer.into()).select()
+}
+
+fn fall_back(renderer: &str, error: &slint::PlatformError) -> ! {
+    let other = if renderer == "software" { "femtovg" } else { "software" };
+    if std::env::var_os("ALBION_METER_FALLBACK").is_none() {
+        eprintln!("the {renderer} renderer did not start ({error}); starting again with {other}");
+        let status = std::process::Command::new(std::env::current_exe().unwrap_or_else(|_| "meter-app".into()))
+            .args(std::env::args_os().skip(1))
+            .env("ALBION_METER_RENDERER", other)
+            .env("ALBION_METER_FALLBACK", "1")
+            .status();
+        std::process::exit(status.ok().and_then(|status| status.code()).unwrap_or(1));
     }
+    eprintln!("no renderer could start: {error}");
+    std::process::exit(1);
 }
 
 fn main() -> Result<(), slint::PlatformError> {
+    let mut args = std::env::args().skip(1);
+    if args.next().as_deref() == Some("--render-ranking") {
+        let (input, output) = (args.next().unwrap_or_default(), args.next().unwrap_or_default());
+        if let Err(error) = ranking_image::child(input.as_ref(), output.as_ref()) {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
     let options = options();
     let fixture_path = options.fixture.clone().unwrap_or_else(fixture::default_path);
     if let (Some(screen), Some(output)) = (&options.screen, &options.screenshot) {
@@ -103,12 +129,24 @@ fn main() -> Result<(), slint::PlatformError> {
         }
         None => None,
     };
-    select_backend(options.software);
-    let app = AppWindow::new()?;
+    if options.software {
+        // SAFETY: still single-threaded, before anything reads the environment.
+        unsafe { std::env::set_var("ALBION_METER_RENDERER", "software") };
+    }
+    if let Some(renderer) = &options.renderer {
+        // SAFETY: as above.
+        unsafe { std::env::set_var("ALBION_METER_RENDERER", renderer) };
+    }
+    let renderer = desktop::renderer();
+    let app = match select_backend(&renderer).and_then(|()| AppWindow::new()) {
+        Ok(app) => app,
+        Err(error) => fall_back(&renderer, &error),
+    };
     let (sans, mono) = desktop::fonts();
     app.global::<Theme>().set_sans(sans.into());
     app.global::<Theme>().set_mono(mono.into());
     if let Some(placement) = desktop::placement() {
+        eprintln!("window: restoring {}x{}{}", placement.width, placement.height, if placement.maximized { ", maximized" } else { "" });
         app.window().set_size(slint::LogicalSize::new(placement.width, placement.height));
         if placement.maximized {
             app.window().set_maximized(true);
@@ -130,9 +168,13 @@ fn main() -> Result<(), slint::PlatformError> {
         for event in screen.events {
             controller.borrow_mut().handle(event);
         }
-        shell.set_view(screen.ui.view.as_str().into());
-        app.global::<MeterState>().invoke_metric_changed(screen.ui.metric.as_str().into());
-        app.global::<MeterState>().set_confirm(screen.ui.confirm.as_str().into());
+        headless::apply(&app, &screen.ui);
+        let (weak, ui) = (app.as_weak(), screen.ui);
+        slint::Timer::single_shot(std::time::Duration::from_millis(300), move || {
+            if let Some(app) = weak.upgrade() {
+                headless::apply_after_layout(&app, &ui);
+            }
+        });
         drop(received);
     } else if options.fake || options.screenshots.is_some() {
         let feed: Box<dyn MeterFeed> = Box::new(fake::FakeFeed { update: options.update || options.screenshots.is_some(), autostart: !options.idle });
@@ -172,7 +214,9 @@ fn main() -> Result<(), slint::PlatformError> {
     if let Some(dir) = options.screenshots {
         screenshots::schedule(&app, dir);
     }
-    app.run()?;
+    if let Err(error) = app.run() {
+        fall_back(&renderer, &error);
+    }
     controller.borrow().save_placement();
     Ok(())
 }

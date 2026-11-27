@@ -1,0 +1,93 @@
+// web/src/CopyDamage.tsx damageImage: the ranking as a picture, like the session link preview on Discord. Rendered
+// at twice its size by `meter-app --render-ranking` and put on the clipboard.
+
+export struct CardStat {
+    label: string,
+    value: string,
+}
+
+export struct CardRow {
+    rank: string,
+    name: string,
+    weapon: string,
+    amount: string,
+    rate: string,
+    color: color,
+    fraction: float,
+    icon: image,
+    has-icon: bool,
+}
+
+export component RankingCard inherits Window {
+    in property <string> heading;
+    in property <string> subtitle;
+    in property <[CardStat]> stats;
+    in property <[CardRow]> rows;
+    in property <string> total;
+    in property <string> sans;
+    in property <string> mono;
+    width: 720px;
+    height: 84px + rows.length * 39px + 30px;
+    background: #0a0d13;
+    default-font-family: sans;
+    Rectangle {
+        x: 60px - 420px;
+        y: -30px - 420px;
+        width: 840px;
+        height: 840px;
+        background: @radial-gradient(circle, #f9871426 0%, #f9871400 60%, #f9871400 100%);
+    }
+    Image { x: 20px; y: 20px; width: 37.5px; height: 30px; source: @image-url("../assets/brand.png"); }
+    Text { x: 66px; y: 21px; text: heading; color: #e9ecf2; font-size: 16px; font-weight: 700; }
+    Text { x: 66px; y: 42px; text: subtitle; color: #808a9b; font-size: 11.5px; }
+    HorizontalLayout {
+        x: 20px;
+        y: 18px;
+        width: 680px;
+        height: 40px;
+        spacing: 6px;
+        alignment: end;
+        for stat in stats: Rectangle {
+            background: #11161f;
+            border-width: 1px;
+            border-color: #1f2734;
+            border-radius: 8px;
+            min-width: max(label.preferred-width, value.preferred-width) + 22px;
+            label := Text { x: 11px; y: 7px; text: stat.label; color: #808a9b; font-size: 9px; font-weight: 700; }
+            value := Text { x: 11px; y: 20px; text: stat.value; color: #e9ecf2; font-family: mono; font-size: 14px; font-weight: 600; }
+        }
+    }
+    for row[index] in rows: Rectangle {
+        x: 20px;
+        y: 84px + index * 39px;
+        width: 680px;
+        height: 34px;
+        border-radius: 7px;
+        background: #161c27;
+        clip: true;
+        Rectangle { x: 0; width: parent.width * row.fraction; background: row.color.with-alpha(0.29); }
+        Rectangle { border-radius: 7px; border-width: 1px; border-color: #1f2734; }
+        Text { x: 0; width: 30px; height: parent.height; text: row.rank; color: #808a9b; font-family: mono; font-size: 11px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+        Rectangle {
+            x: 30px;
+            y: 4px;
+            width: 26px;
+            height: 26px;
+            border-radius: 5px;
+            background: row.has-icon ? transparent : #0a0d13;
+            if row.has-icon: Image { width: 26px; height: 26px; source: row.icon; image-fit: contain; }
+        }
+        HorizontalLayout {
+            x: 64px;
+            width: parent.width - 64px - 12px;
+            height: parent.height;
+            spacing: 10px;
+            Text { text: row.name; color: #e9ecf2; font-size: 13.5px; font-weight: 700; overflow: elide; max-width: 220px; vertical-alignment: center; }
+            Text { text: row.weapon; color: #9aa3b2; font-size: 11px; overflow: elide; vertical-alignment: center; horizontal-stretch: 1; min-width: 0px; }
+            Text { text: row.amount; color: #e9ecf2; font-family: mono; font-size: 12.5px; font-weight: 600; vertical-alignment: center; }
+            Text { width: 72px; text: row.rate; color: #b7becb; font-family: mono; font-size: 11px; horizontal-alignment: right; vertical-alignment: center; }
+        }
+    }
+    Text { x: 22px; y: root.height - 23px; text: total; color: #808a9b; font-size: 11px; }
+    Text { x: root.width - 20px - self.width; y: root.height - 23px; text: "albionlab.app"; color: #f98714; font-size: 11px; }
+}

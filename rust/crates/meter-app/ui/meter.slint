@@ -2,6 +2,7 @@ import { Theme } from "theme.slint";
 import { Icon, Icons } from "icons.slint";
 import { T } from "i18n.slint";
 import { Shell, MeterState, LabState, BarRow } from "state.slint";
+import { CopyButton } from "copy.slint";
 import { Button, LinkButton, Segmented, SegButton, Select, Check, Panel, PanelHeading, TextField, Eyebrow, Banner } from "widgets.slint";
 
 // web/src/CaptureNotice.tsx: combat is not being recorded, or players are waiting to be identified.
@@ -174,6 +175,7 @@ component SessionName inherits VerticalLayout {
     private property <string> draft: LabState.session-title;
     spacing: 6px;
     field := TextField {
+        label: T.s("Session name");
         text: LabState.session-title;
         placeholder: LabState.suggested-title != "" ? LabState.suggested-title : T.s("Untitled session");
         max-length: 80;
@@ -187,6 +189,9 @@ component SessionName inherits VerticalLayout {
         alignment: start;
         Text { text: T.s("Suggestion:"); color: Theme.muted; font-size: 12px; }
         suggestion := Text {
+            accessible-role: button;
+            accessible-label: T.s("Use this name");
+            accessible-action-default => { field.text = LabState.suggested-title; draft = LabState.suggested-title; LabState.save-title(LabState.suggested-title); }
             text: LabState.suggested-title;
             color: touch.has-hover ? Theme.accent : Theme.text-2;
             font-size: 12px;
@@ -269,6 +274,9 @@ component LabSession inherits HorizontalLayout {
                 border-radius: 6px;
                 background: copy.has-hover ? Theme.hover : Theme.surface-3;
                 Icon { d: LabState.copied ? Icons.check : Icons.copy; size: 14px; color: copy.has-hover ? Theme.text : Theme.muted; }
+                accessible-role: button;
+                accessible-label: T.s(LabState.copied ? "Copied" : "Copy link");
+                accessible-action-default => { LabState.copy-link(); }
                 copy := TouchArea { mouse-cursor: pointer; clicked => { LabState.copy-link(); } }
             }
         }
@@ -396,6 +404,7 @@ component AlbionLabCard inherits Panel {
                     alignment: start;
                     Text { text: T.s("Visibility").to-uppercase(); color: Theme.muted; font-size: 11px; font-weight: 700; letter-spacing: 0.88px; }
                     Select {
+                        label: T.s("Visibility");
                         selected: LabState.visibility == "public" ? 1 : LabState.visibility == "private" ? 2 : 0;
                         options: [
                             { value: "unlisted", label: T.s("Unlisted — anyone with the link") },
@@ -460,80 +469,6 @@ component Bar inherits Rectangle {
     }
 }
 
-component CopyOption inherits Rectangle {
-    in property <string> icon;
-    in property <string> label;
-    in property <string> hint;
-    callback clicked();
-    min-height: column.preferred-height + 16px;
-    border-radius: 7px;
-    background: touch.has-hover ? Theme.surface-3 : transparent;
-    HorizontalLayout {
-        padding: 8px;
-        spacing: 10px;
-        Icon { d: icon; size: 16px; color: touch.has-hover ? Theme.accent : Theme.muted; y: 10px; }
-        column := VerticalLayout {
-            spacing: 2px;
-            Text { text: label; color: Theme.text; font-size: 13px; font-weight: 600; }
-            Text { text: hint; color: Theme.muted; font-size: 11.5px; wrap: word-wrap; }
-        }
-    }
-    touch := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
-}
-
-// web/src/CopyDamage.tsx: one Copy button and a menu of what to copy; the confirmation floats under it (BarsPanel).
-export component CopyButton {
-    private property <bool> available: MeterState.copy-available;
-    private property <string> title: T.s(MeterState.metric == "damage" ? "Copy total damage" : "Copy total healing");
-    private property <bool> copied: MeterState.copy-done != "";
-    private property <bool> hot: touch.has-hover && available;
-    height: 32px;
-    min-width: row.preferred-width;
-    Rectangle {
-        background: hot ? Theme.surface-3 : Theme.surface-2;
-        border-width: 1px;
-        border-color: hot ? Theme.border-hover : Theme.border-strong;
-        border-radius: Theme.radius-sm;
-        opacity: available ? 1 : 0.45;
-        row := HorizontalLayout {
-            padding-left: 9px;
-            padding-right: 10px;
-            spacing: 6px;
-            Icon { d: copied ? Icons.check : Icons.copy; size: 15px; color: copied ? Theme.good : hot ? Theme.text : Theme.text-2; opacity: MeterState.copy-busy ? 0.3 : 1; y: (parent.height - self.height) / 2; }
-            Text { text: T.s("Copy"); color: hot ? Theme.text : Theme.text-2; font-size: 12.5px; font-weight: 500; vertical-alignment: center; }
-            Icon { d: Icons.chevron; size: 13px; color: Theme.muted; y: (parent.height - self.height) / 2; }
-        }
-    }
-    touch := TouchArea {
-        mouse-cursor: available ? pointer : default;
-        clicked => { if available && !MeterState.copy-busy { menu.show(); } }
-    }
-    menu := PopupWindow {
-        x: root.width - 290px;
-        y: root.height + 6px;
-        width: 290px;
-        close-policy: close-on-click-outside;
-        Rectangle {
-            border-width: 1px;
-            border-color: Theme.border-strong;
-            border-radius: 10px;
-            background: Theme.surface-2;
-            drop-shadow-blur: 20px;
-            drop-shadow-offset-y: 9px;
-            drop-shadow-color: #00000099;
-            VerticalLayout {
-                padding: 6px;
-                spacing: 2px;
-                Text { text: title.to-uppercase(); color: Theme.muted; font-size: 11px; font-weight: 600; letter-spacing: 0.44px; }
-                CopyOption { icon: Icons.image; label: T.s("Ranking as image"); hint: T.s("The ranking with weapons and bars, ready to paste"); clicked => { menu.close(); MeterState.copy("image"); } }
-                CopyOption { icon: Icons.list; label: T.s("Ranking as text"); hint: T.s("One line per player, the format other meters share in chat"); clicked => { menu.close(); MeterState.copy("text"); } }
-                CopyOption { icon: Icons.users; label: T.s("Player names"); hint: T.s("Only the names, one per line, in ranking order"); clicked => { menu.close(); MeterState.copy("names"); } }
-            }
-        }
-    }
-}
-
-
 component BarsPanel inherits Panel {
     private property <bool> damage: MeterState.metric == "damage";
     private property <string> toast: MeterState.copy-error != "" ? MeterState.copy-error
@@ -550,7 +485,14 @@ component BarsPanel inherits Panel {
                 SegButton { text: T.s("Damage"); active: damage; clicked => { MeterState.metric-changed("damage"); } }
                 SegButton { text: T.s("Healing"); active: !damage; clicked => { MeterState.metric-changed("healing"); } }
             }
-            CopyButton { }
+            CopyButton {
+                available: MeterState.copy-available;
+                busy: MeterState.copy-busy;
+                copied: MeterState.copy-done != "";
+                metric: MeterState.metric;
+                request-open: MeterState.copy-menu;
+                copy(format) => { MeterState.copy(format); }
+            }
         }
         if MeterState.bars.length == 0: Text {
             text: T.s(Shell.record-status == "idle" ? "Press Play, then fight: party members appear here." : "Waiting for combat…");

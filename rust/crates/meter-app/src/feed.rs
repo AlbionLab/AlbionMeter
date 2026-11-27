@@ -66,6 +66,8 @@ pub struct ItemContribution {
     pub player_id: Arc<str>,
     pub player_name: Arc<str>,
     pub item_index: Option<i32>,
+    /// The item's id once known (the icon cache key, `/api/items/{index}` today).
+    pub item_id: Option<Arc<str>>,
     pub slot: Arc<str>,
     pub item: Arc<str>,
     /// "T8.3" when the item's tier is known.

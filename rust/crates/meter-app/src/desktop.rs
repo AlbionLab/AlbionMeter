@@ -6,7 +6,11 @@ use std::process::Command;
 use crate::i18n::Language;
 
 /// Electron's userData folder for "Albion Meter", so the language and placement chosen there carry over.
+/// `ALBION_METER_CONFIG_DIR` replaces it (tests and screenshot runs never touch the real one).
 pub fn config_dir() -> Option<PathBuf> {
+    if let Some(dir) = std::env::var_os("ALBION_METER_CONFIG_DIR") {
+        return Some(PathBuf::from(dir));
+    }
     let base = if cfg!(windows) {
         std::env::var_os("APPDATA").map(PathBuf::from)
     } else if cfg!(target_os = "macos") {
@@ -28,6 +32,16 @@ fn write_json(path: &Path, changes: serde_json::Map<String, serde_json::Value>) 
     if let Ok(text) = serde_json::to_string_pretty(&value) {
         let _ = std::fs::write(path, text);
     }
+}
+
+/// The renderer: `ALBION_METER_RENDERER`, else `renderer` in settings.json, else software. The software renderer is the
+/// default: with OpenGL the driver alone maps ~75 MB, over the 60 MB idle budget, and it costs more CPU at 4 Hz.
+pub fn renderer() -> String {
+    std::env::var("ALBION_METER_RENDERER")
+        .ok()
+        .or_else(|| config_dir().and_then(|dir| read_json(&dir.join("settings.json")).get("renderer").and_then(|value| value.as_str().map(String::from))))
+        .filter(|name| matches!(name.as_str(), "software" | "femtovg"))
+        .unwrap_or_else(|| "software".into())
 }
 
 /// The chosen language, or the system's on the first run.
@@ -114,8 +128,16 @@ fn collect_fonts(dir: &Path, depth: u32, found: &mut Vec<String>) {
     }
 }
 
+thread_local! {
+    /// Replaces the browser (UI tests).
+    pub static OPENER: std::cell::Cell<Option<fn(&str)>> = const { std::cell::Cell::new(None) };
+}
+
 /// Opens a link in the default browser.
 pub fn open_url(url: &str) {
+    if let Some(opener) = OPENER.with(std::cell::Cell::get) {
+        return opener(url);
+    }
     if !(url.starts_with("https://") || url.starts_with("http://")) {
         return;
     }
@@ -131,9 +153,19 @@ pub fn open_url(url: &str) {
     }
 }
 
+pub type Picker = fn(bool, &str, &[&str]) -> Option<PathBuf>;
+
+thread_local! {
+    /// Replaces the native picker (UI tests).
+    pub static PICKER: std::cell::Cell<Option<Picker>> = const { std::cell::Cell::new(None) };
+}
+
 /// A native file or folder picker through the desktop's own dialog tool (zenity or kdialog on Linux). The Windows and
 /// macOS pickers come with the integration phase.
 pub fn pick(folder: bool, title: &str, filters: &[&str]) -> Option<PathBuf> {
+    if let Some(picker) = PICKER.with(std::cell::Cell::get) {
+        return picker(folder, title, filters);
+    }
     let attempts: Vec<(&str, Vec<String>)> = vec![
         (
             "zenity",

@@ -13,7 +13,8 @@ text = re.sub(r'\x1b\[[0-9;]*m', '', text)
 blocks = re.findall(r'^(?:error(?:\[E\d+\])?:.*?|thread .* panicked at .*?|---- .* stdout ----.*?)(?=^\s*$)', text, re.M | re.S)
 # A crash (stack overflow, access violation) prints no panic: the tests that were running and the runtime's message.
 crash = [line for line in text.splitlines() if re.search(r'overflowed its stack|fatal runtime error|STATUS_|exit code|signal:|test .* has been running', line)]
-running = [line for line in text.splitlines() if re.match(r'^test \S+ \.\.\. ?$', line) or line.startswith('     Running ')]
+# A test that never finished keeps its "test name ... " line open, so whatever was printed next lands on it.
+running = [line for line in text.splitlines() if (re.match(r'^test \S+ \.\.\.', line) and not re.match(r'^test \S+ \.\.\. (ok|FAILED|ignored)\b', line)) or line.startswith('     Running ')]
 if crash:
     blocks.insert(0, '\n'.join(crash[-15:] + ['last started:'] + running[-12:]))
 if not blocks:

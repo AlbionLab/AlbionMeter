@@ -1,0 +1,599 @@
+import { Theme } from "theme.slint";
+import { Icon, Icons } from "icons.slint";
+import { T } from "i18n.slint";
+import { Shell, MeterState, LabState, BarRow } from "state.slint";
+import { Button, LinkButton, Segmented, SegButton, Select, Check, Panel, PanelHeading, TextField, Eyebrow, Banner } from "widgets.slint";
+
+// web/src/CaptureNotice.tsx: combat is not being recorded, or players are waiting to be identified.
+export component CaptureNotice inherits VerticalLayout {
+    callback open-capture();
+    spacing: 14px;
+    if MeterState.notice-failed: Banner {
+        action: T.s("Open Capture");
+        action-button: true;
+        act => { root.open-capture(); }
+        HorizontalLayout {
+            horizontal-stretch: 1;
+        Text {
+            text: T.s("Combat is not being recorded") ;
+            color: #f0a79c;
+            font-size: 12.5px;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+        Text {
+            text: (MeterState.notice-reason != "" ? T.f(" because {reason}", "reason", MeterState.notice-reason) : "") + T.s(". Damage and healing from now on will be lost.");
+            color: #f0a79c;
+            font-size: 12.5px;
+            wrap: word-wrap;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+        }
+    }
+    if MeterState.notice-pending != "": Banner {
+        tone: "warn";
+        text: T.f("{n} combat updates are waiting for their players to be identified. They are credited as soon as each player is named (chat message, gear change or coming into view) and kept as unidentified players at the next zone change.", "n", MeterState.notice-pending);
+    }
+}
+
+// The clock and the record controls. Play, Pause and Resume take each other's place and End sits where Play was; Rust
+// drops the second click of a double click so it cannot undo the first.
+component Controls inherits Panel {
+    private property <string> status: Shell.record-status;
+    private property <bool> open: status == "running" || status == "paused";
+    min-height: row.preferred-height;
+    row := HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        padding-top: 16px;
+        padding-bottom: 16px;
+        spacing: 16px;
+        VerticalLayout {
+            spacing: 4px;
+            alignment: center;
+            Eyebrow { text: T.s("Current session").to-uppercase(); }
+            HorizontalLayout {
+                spacing: 10px;
+                Text { text: T.s("Encounter"); color: Theme.muted; font-size: 12px; vertical-alignment: bottom; }
+                Text { text: MeterState.clock; color: Theme.text; font-family: Theme.mono; font-size: 26px; font-weight: 700; vertical-alignment: bottom; }
+            }
+        }
+        Rectangle { horizontal-stretch: 1; }
+        VerticalLayout {
+            spacing: 9px;
+            alignment: center;
+            HorizontalLayout {
+                spacing: 14px;
+                alignment: end;
+                HorizontalLayout {
+                    spacing: 8px;
+                    if status == "running": Button { text: T.s("Pause"); icon: Icons.pause; variant: "hold"; min-w: 116px; enabled: MeterState.can-control; clicked => { MeterState.control("pause"); } }
+                    if status == "paused": Button { text: T.s("Resume"); icon: Icons.play; variant: "go"; min-w: 116px; enabled: MeterState.can-control; clicked => { MeterState.control("resume"); } }
+                    if !open: Button { text: T.s("Play"); icon: Icons.play; variant: "go"; min-w: 116px; enabled: MeterState.can-control; clicked => { MeterState.control("play"); } }
+                }
+                if open: Rectangle { width: 1px; background: Theme.border; }
+                if open: HorizontalLayout {
+                    spacing: 8px;
+                    Button {
+                        text: T.s("Reset");
+                        icon: Icons.history;
+                        variant: "ghost";
+                        enabled: MeterState.can-control;
+                        tooltip: T.s("Clear damage and healing and count again from zero, keeping the players and the AlbionLab session");
+                        clicked => { MeterState.control("reset"); }
+                    }
+                    Button {
+                        text: T.s("End session");
+                        icon: Icons.stop;
+                        variant: "danger";
+                        enabled: MeterState.can-control;
+                        tooltip: T.s("End the session and its AlbionLab live session");
+                        clicked => { MeterState.control("end"); }
+                    }
+                }
+            }
+            if open: HorizontalLayout {
+                spacing: 6px;
+                alignment: end;
+                Icon { d: Icons.info; size: 12px; color: Theme.warn; y: (parent.height - self.height) / 2; }
+                Text { text: T.s("Ending closes this session — your next Play opens a new one."); color: Theme.muted; font-size: 11.5px; }
+            }
+        }
+    }
+}
+
+// Asks before Reset (wipes the current count), End (closes the session) or disconnecting AlbionLab. Escape or the
+// backdrop cancels.
+export component ConfirmModal inherits Rectangle {
+    in property <string> kind: MeterState.confirm;
+    private property <bool> reset: kind == "reset";
+    private property <bool> unlink: kind == "disconnect";
+    background: #00000099;
+    TouchArea { clicked => { MeterState.confirm = ""; } }
+    FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape { MeterState.confirm = ""; return accept; }
+            if event.text == Key.Return { MeterState.confirmed(kind); return accept; }
+            reject
+        }
+        init => { self.focus(); }
+    }
+    Rectangle {
+        width: min(380px, parent.width - 40px);
+        height: box.preferred-height;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        border-radius: 14px;
+        background: Theme.surface;
+        drop-shadow-blur: 30px;
+        drop-shadow-offset-y: 12px;
+        drop-shadow-color: #000000bb;
+        TouchArea { }
+        box := VerticalLayout {
+            padding: 20px;
+            spacing: 10px;
+            if !unlink: Rectangle {
+                width: 40px;
+                height: 40px;
+                border-radius: 10px;
+                background: (reset ? Theme.warn : Theme.bad).with-alpha(0.18);
+                Icon { d: reset ? Icons.history : Icons.stop; size: 20px; color: reset ? Theme.warn : Theme.bad; }
+            }
+            Text {
+                text: unlink ? T.s("Disconnect this PC from your AlbionLab account?") : T.s(reset ? "Reset the count?" : "End the session?");
+                color: Theme.text;
+                font-size: unlink ? 14px : 16px;
+                font-weight: 600;
+                wrap: word-wrap;
+            }
+            if !unlink: Text {
+                text: T.s(reset ? "This clears the damage, healing and time of the current record. The players and the AlbionLab session stay." : "This finishes this session and its AlbionLab live session. Press Play to start a new one.");
+                color: Theme.text-2;
+                font-size: 13px;
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                padding-top: 8px;
+                spacing: 10px;
+                alignment: end;
+                Button { text: T.s("Cancel"); clicked => { MeterState.confirm = ""; } }
+                Button {
+                    text: unlink ? T.s("Disconnect account") : T.s(reset ? "Reset" : "End session");
+                    icon: unlink ? "" : reset ? Icons.history : Icons.stop;
+                    variant: reset ? "hold" : "danger-solid";
+                    clicked => { MeterState.confirmed(kind); }
+                }
+            }
+        }
+    }
+}
+
+// The session's name on AlbionLab, with a suggested name that applies with one click.
+component SessionName inherits VerticalLayout {
+    private property <string> draft: LabState.session-title;
+    spacing: 6px;
+    field := TextField {
+        text: LabState.session-title;
+        placeholder: LabState.suggested-title != "" ? LabState.suggested-title : T.s("Untitled session");
+        max-length: 80;
+        edited(value) => { draft = value; }
+        accepted => { self.blur(); }
+        escape => { self.text = LabState.session-title; draft = LabState.session-title; self.blur(); }
+        focus-lost => { if draft != LabState.session-title { LabState.save-title(draft); } }
+    }
+    if LabState.suggested-title != "" && LabState.suggested-title != draft: HorizontalLayout {
+        spacing: 4px;
+        alignment: start;
+        Text { text: T.s("Suggestion:"); color: Theme.muted; font-size: 12px; }
+        suggestion := Text {
+            text: LabState.suggested-title;
+            color: touch.has-hover ? Theme.accent : Theme.text-2;
+            font-size: 12px;
+            font-weight: 600;
+            overflow: elide;
+            touch := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { field.text = LabState.suggested-title; draft = LabState.suggested-title; LabState.save-title(LabState.suggested-title); }
+            }
+        }
+    }
+}
+
+component LabTitle inherits HorizontalLayout {
+    horizontal-stretch: 0;
+    spacing: 14px;
+    Image { source: @image-url("../assets/brand.png"); width: 40px; height: 32px; y: (parent.height - 32px) / 2; }
+    VerticalLayout {
+        alignment: center;
+        Text { text: "AlbionLab"; color: Theme.text; font-size: 13px; font-weight: 700; }
+        Text { text: T.s("Share, analyse and follow this session on AlbionLab."); color: Theme.muted; font-size: 12px; overflow: elide; }
+    }
+}
+
+component LabSession inherits HorizontalLayout {
+    private property <string> state: LabState.session-state;
+    private property <color> ink: state == "live" ? Theme.good : state == "offline" ? Theme.warn : Theme.muted;
+    spacing: 14px;
+    Rectangle {
+        y: (parent.height - self.height) / 2;
+        height: 26px;
+        width: live.preferred-width;
+        horizontal-stretch: 0;
+        border-radius: 13px;
+        border-width: 1px;
+        border-color: state == "live" || state == "offline" ? ink.with-alpha(0.25) : Theme.border-strong;
+        background: state == "live" || state == "offline" ? ink.with-alpha(0.08) : Theme.surface-2;
+        live := HorizontalLayout {
+            padding-left: 9px;
+            padding-right: 11px;
+            spacing: 7px;
+            Rectangle { width: 8px; height: 8px; y: (parent.height - 8px) / 2; border-radius: 4px; background: ink; }
+            Text {
+                text: T.s(state == "live" ? "Live" : state == "completed" ? "Finished" : state == "offline" ? "Offline — resending" : "Not published");
+                color: ink;
+                font-size: 12px;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+        }
+    }
+    Rectangle {
+        y: (parent.height - self.height) / 2;
+        height: 34px;
+        min-width: 120px;
+        preferred-width: link.preferred-width;
+        horizontal-stretch: 1;
+        max-width: link.preferred-width;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        border-radius: 8px;
+        background: Theme.surface-2;
+        link := HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 6px;
+            spacing: 8px;
+            Text {
+                text: LabState.session-link;
+                color: Theme.text-2;
+                font-family: Theme.mono;
+                font-size: 12.5px;
+                overflow: elide;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            Rectangle {
+                width: 26px;
+                height: 26px;
+                y: (parent.height - 26px) / 2;
+                border-radius: 6px;
+                background: copy.has-hover ? Theme.hover : Theme.surface-3;
+                Icon { d: LabState.copied ? Icons.check : Icons.copy; size: 14px; color: copy.has-hover ? Theme.text : Theme.muted; }
+                copy := TouchArea { mouse-cursor: pointer; clicked => { LabState.copy-link(); } }
+            }
+        }
+    }
+    Button {
+        y: (parent.height - self.height) / 2;
+        h: 34px;
+        text: T.s("Open full analysis");
+        icon: Icons.link;
+        icon-size: 14px;
+        variant: "primary";
+        clicked => { Shell.open-url(LabState.session-url); }
+    }
+    Rectangle { horizontal-stretch: 1; }
+}
+
+component LabAccount inherits HorizontalLayout {
+    horizontal-stretch: 0;
+    spacing: 8px;
+    Rectangle {
+        width: 26px;
+        height: 26px;
+        y: (parent.height - 26px) / 2;
+        border-radius: 13px;
+        clip: true;
+        background: Theme.surface-3;
+        if LabState.has-avatar: Image { width: 26px; height: 26px; source: LabState.avatar; }
+        
+    }
+    Text { text: LabState.account-name; color: Theme.text; font-size: 13px; font-weight: 600; vertical-alignment: center; }
+}
+
+// The AlbionLab card of main.tsx: connect, approve the pairing code, then the live session and its options.
+component AlbionLabCard inherits Panel {
+    in property <bool> recording;
+    private property <bool> session: LabState.has-session;
+    private property <bool> wide: self.width >= 1060px;
+    border-color: LabState.connected && session ? #f9871466 : Theme.border-strong;
+    min-height: body.preferred-height;
+    if LabState.connected && session: Rectangle {
+        x: parent.width - self.width / 2;
+        y: - self.height / 2;
+        width: 760px;
+        height: 760px;
+        background: @radial-gradient(circle, #f9871420 0%, #f9871400 60%);
+    }
+    body := VerticalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        padding-top: 16px;
+        padding-bottom: 16px;
+        spacing: 14px;
+        if !LabState.loaded: Text { text: T.s("Connecting to AlbionLab…"); color: Theme.muted; font-size: 13px; }
+        if LabState.loaded && (wide || !(LabState.connected && session)): HorizontalLayout {
+            spacing: 14px;
+            LabTitle { }
+            if LabState.connected && session: LabSession { horizontal-stretch: 1; }
+            if !(LabState.connected && session): Rectangle { horizontal-stretch: 1; }
+            if LabState.has-account: LabAccount { }
+        }
+        if LabState.loaded && !wide && LabState.connected && session: HorizontalLayout {
+            spacing: 14px;
+            LabTitle { }
+            Rectangle { horizontal-stretch: 1; }
+            if LabState.has-account: LabAccount { }
+        }
+        if LabState.loaded && !wide && LabState.connected && session: LabSession { }
+        if LabState.loaded && LabState.error != "": Text { text: LabState.error; color: #f3a294; font-size: 13px; wrap: word-wrap; }
+        if LabState.loaded && !LabState.connected && !LabState.pairing: VerticalLayout {
+            spacing: 12px;
+            Text { text: T.s("Connect your AlbionLab account to publish each record as a live session you can open, share or make public."); color: Theme.text-2; font-size: 13px; wrap: word-wrap; }
+            if LabState.pairing-error == "revoked": Text { text: T.s("This PC was disconnected from your account. Connect again to keep publishing."); color: #f3a294; font-size: 13px; wrap: word-wrap; }
+            if LabState.pairing-error == "denied": Text { text: T.s("The connection was refused on the site."); color: #f3a294; font-size: 13px; }
+            if LabState.pairing-error == "expired": Text { text: T.s("The code expired. Try again."); color: #f3a294; font-size: 13px; }
+            HorizontalLayout {
+                alignment: start;
+                Button { text: T.s("Connect account"); icon: Icons.link; icon-size: 15px; variant: "primary"; clicked => { LabState.connect(); } }
+            }
+        }
+        if LabState.loaded && !LabState.connected && LabState.pairing: VerticalLayout {
+            spacing: 12px;
+            Text { text: T.s("Approve this PC on AlbionLab (sign in with Discord if asked). The code shown there must be:"); color: Theme.text-2; font-size: 13px; wrap: word-wrap; }
+            Text { text: LabState.pair-code; color: Theme.brand; font-family: Theme.mono; font-size: 34px; font-weight: 700; letter-spacing: 4px; }
+            HorizontalLayout {
+                spacing: 10px;
+                alignment: start;
+                Button { text: T.s("Open AlbionLab again"); clicked => { Shell.open-url(LabState.verify-url); } }
+                Text { text: T.s("Waiting for approval…"); color: Theme.muted; font-size: 13px; vertical-alignment: center; }
+            }
+        }
+        if LabState.loaded && LabState.connected: VerticalLayout {
+            spacing: 12px;
+            if !session: HorizontalLayout {
+                spacing: 10px;
+                HorizontalLayout {
+                    horizontal-stretch: 0;
+                    spacing: 7px;
+                    Rectangle { width: 8px; height: 8px; y: (parent.height - 8px) / 2; border-radius: 4px; background: Theme.muted; }
+                    Text { text: T.s(recording ? "Creating the session…" : "No live session"); color: Theme.text; font-size: 13px; font-weight: 700; vertical-alignment: center; }
+                }
+                Text {
+                    text: T.s(recording ? "The live session on AlbionLab is being created." : "Press Play: each record becomes a new live session on AlbionLab, and End closes it.");
+                    color: Theme.muted;
+                    font-size: 13px;
+                    vertical-alignment: center;
+                    horizontal-stretch: 0;
+                }
+                Button { text: T.s("My sessions"); clicked => { Shell.open-url(LabState.server + "/account"); } }
+                Rectangle { horizontal-stretch: 1; }
+            }
+            if LabState.session-error != "": Text { text: LabState.session-error; color: #f3a294; font-size: 13px; wrap: word-wrap; }
+            HorizontalLayout {
+                padding-top: 2px;
+                spacing: 18px;
+                VerticalLayout {
+                    horizontal-stretch: 1.3;
+                    spacing: 7px;
+                    Text { text: T.s("Session name").to-uppercase(); color: Theme.muted; font-size: 11px; font-weight: 700; letter-spacing: 0.88px; }
+                    SessionName { }
+                }
+                Rectangle { width: 1px; background: Theme.border; }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 7px;
+                    alignment: start;
+                    Text { text: T.s("Visibility").to-uppercase(); color: Theme.muted; font-size: 11px; font-weight: 700; letter-spacing: 0.88px; }
+                    Select {
+                        selected: LabState.visibility == "public" ? 1 : LabState.visibility == "private" ? 2 : 0;
+                        options: [
+                            { value: "unlisted", label: T.s("Unlisted — anyone with the link") },
+                            { value: "public", label: T.s("Public — listed on AlbionLab") },
+                            { value: "private", label: T.s("Private — only me") },
+                        ];
+                        changed(value) => { LabState.set-visibility(value); }
+                    }
+                }
+                Rectangle { width: 1px; background: Theme.border; }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 10px;
+                    alignment: start;
+                    Check { text: T.s("Hide other players' names"); checked: LabState.anonymize; toggled(value) => { LabState.set-anonymize(value); } }
+                    Check { text: T.s("Share dungeon location (map names)"); checked: LabState.share-location; toggled(value) => { LabState.set-share-location(value); } }
+                }
+            }
+            HorizontalLayout {
+                alignment: end;
+                LinkButton { text: T.s("Disconnect account"); clicked => { MeterState.confirm = "disconnect"; } }
+            }
+        }
+    }
+}
+
+component Bar inherits Rectangle {
+    in property <BarRow> bar;
+    in property <bool> narrow;
+    height: 38px;
+    border-radius: 7px;
+    background: Theme.surface-2;
+    clip: true;
+    Rectangle {
+        x: 0;
+        width: parent.width * bar.fraction;
+        background: bar.color.with-alpha(0.28);
+        Rectangle { x: parent.width - 2px; width: 2px; background: bar.color; }
+    }
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 12px;
+        spacing: 10px;
+        Text { width: narrow ? 22px : 26px; text: bar.rank; color: Theme.muted; font-family: Theme.mono; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; }
+        Rectangle {
+            width: 28px;
+            height: 28px;
+            y: (parent.height - 28px) / 2;
+            border-radius: 6px;
+            background: Theme.surface-3;
+            clip: true;
+            if bar.has-icon: Image { width: 28px; height: 28px; source: bar.icon; image-fit: contain; }
+            if !bar.has-icon: Text { text: "?"; color: Theme.faint; font-size: 12px; }
+        }
+        Text { text: bar.name; color: Theme.text; font-size: 13px; font-weight: 600; overflow: elide; vertical-alignment: center; horizontal-stretch: 1; }
+        HorizontalLayout {
+            spacing: 4px;
+            Text { text: bar.value; color: Theme.text; font-family: Theme.mono; font-size: 13px; font-weight: 600; vertical-alignment: center; }
+            Text { text: "(" + bar.share + ")"; color: Theme.text-2; font-family: Theme.mono; font-size: 11px; vertical-alignment: center; }
+        }
+        if !narrow: Text { width: 90px; text: bar.rate; color: Theme.muted; font-family: Theme.mono; font-size: 12px; horizontal-alignment: right; vertical-alignment: center; }
+    }
+}
+
+component CopyOption inherits Rectangle {
+    in property <string> icon;
+    in property <string> label;
+    in property <string> hint;
+    callback clicked();
+    min-height: column.preferred-height + 16px;
+    border-radius: 7px;
+    background: touch.has-hover ? Theme.surface-3 : transparent;
+    HorizontalLayout {
+        padding: 8px;
+        spacing: 10px;
+        Icon { d: icon; size: 16px; color: touch.has-hover ? Theme.accent : Theme.muted; y: 10px; }
+        column := VerticalLayout {
+            spacing: 2px;
+            Text { text: label; color: Theme.text; font-size: 13px; font-weight: 600; }
+            Text { text: hint; color: Theme.muted; font-size: 11.5px; wrap: word-wrap; }
+        }
+    }
+    touch := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+// web/src/CopyDamage.tsx: one Copy button and a menu of what to copy; the confirmation floats under it (BarsPanel).
+export component CopyButton {
+    private property <bool> available: MeterState.copy-available;
+    private property <string> title: T.s(MeterState.metric == "damage" ? "Copy total damage" : "Copy total healing");
+    private property <bool> copied: MeterState.copy-done != "";
+    private property <bool> hot: touch.has-hover && available;
+    height: 32px;
+    min-width: row.preferred-width;
+    Rectangle {
+        background: hot ? Theme.surface-3 : Theme.surface-2;
+        border-width: 1px;
+        border-color: hot ? Theme.border-hover : Theme.border-strong;
+        border-radius: Theme.radius-sm;
+        opacity: available ? 1 : 0.45;
+        row := HorizontalLayout {
+            padding-left: 9px;
+            padding-right: 10px;
+            spacing: 6px;
+            Icon { d: copied ? Icons.check : Icons.copy; size: 15px; color: copied ? Theme.good : hot ? Theme.text : Theme.text-2; opacity: MeterState.copy-busy ? 0.3 : 1; y: (parent.height - self.height) / 2; }
+            Text { text: T.s("Copy"); color: hot ? Theme.text : Theme.text-2; font-size: 12.5px; font-weight: 500; vertical-alignment: center; }
+            Icon { d: Icons.chevron; size: 13px; color: Theme.muted; y: (parent.height - self.height) / 2; }
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: available ? pointer : default;
+        clicked => { if available && !MeterState.copy-busy { menu.show(); } }
+    }
+    menu := PopupWindow {
+        x: root.width - 290px;
+        y: root.height + 6px;
+        width: 290px;
+        close-policy: close-on-click-outside;
+        Rectangle {
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            border-radius: 10px;
+            background: Theme.surface-2;
+            drop-shadow-blur: 20px;
+            drop-shadow-offset-y: 9px;
+            drop-shadow-color: #00000099;
+            VerticalLayout {
+                padding: 6px;
+                spacing: 2px;
+                Text { text: title.to-uppercase(); color: Theme.muted; font-size: 11px; font-weight: 600; letter-spacing: 0.44px; }
+                CopyOption { icon: Icons.image; label: T.s("Ranking as image"); hint: T.s("The ranking with weapons and bars, ready to paste"); clicked => { menu.close(); MeterState.copy("image"); } }
+                CopyOption { icon: Icons.list; label: T.s("Ranking as text"); hint: T.s("One line per player, the format other meters share in chat"); clicked => { menu.close(); MeterState.copy("text"); } }
+                CopyOption { icon: Icons.users; label: T.s("Player names"); hint: T.s("Only the names, one per line, in ranking order"); clicked => { menu.close(); MeterState.copy("names"); } }
+            }
+        }
+    }
+}
+
+
+component BarsPanel inherits Panel {
+    private property <bool> damage: MeterState.metric == "damage";
+    private property <string> toast: MeterState.copy-error != "" ? MeterState.copy-error
+        : MeterState.copy-done == "image" ? T.s("Ranking copied as image")
+        : MeterState.copy-done == "text" ? T.s("Ranking copied as text")
+        : MeterState.copy-done == "names" ? T.s("Player names copied")
+        : MeterState.copy-busy ? T.s("Preparing image…") : "";
+    min-height: column.preferred-height;
+    column := VerticalLayout {
+        PanelHeading {
+            title: T.s(damage ? "Damage" : "Healing");
+            note: MeterState.total-note;
+            Segmented {
+                SegButton { text: T.s("Damage"); active: damage; clicked => { MeterState.metric-changed("damage"); } }
+                SegButton { text: T.s("Healing"); active: !damage; clicked => { MeterState.metric-changed("healing"); } }
+            }
+            CopyButton { }
+        }
+        if MeterState.bars.length == 0: Text {
+            text: T.s(Shell.record-status == "idle" ? "Press Play, then fight: party members appear here." : "Waiting for combat…");
+            color: Theme.muted;
+            font-size: 13px;
+            horizontal-alignment: center;
+            height: 74px;
+            vertical-alignment: center;
+        }
+        if MeterState.bars.length > 0: VerticalLayout {
+            padding-left: 14px;
+            padding-right: 14px;
+            padding-top: 10px;
+            padding-bottom: 16px;
+            spacing: 4px;
+            for row in MeterState.bars: Bar { bar: row; narrow: root.width < 600px; }
+        }
+    }
+    if toast != "": Rectangle {
+        x: parent.width - 16px - self.width;
+        y: 47px;
+        width: min(300px, label.preferred-width + 20px);
+        height: label.preferred-height + 14px;
+        border-width: 1px;
+        border-radius: Theme.radius-sm;
+        border-color: MeterState.copy-error != "" ? #7f1d1d : Theme.border-strong;
+        background: Theme.surface-2;
+        drop-shadow-blur: 12px;
+        drop-shadow-offset-y: 5px;
+        drop-shadow-color: #00000088;
+        label := Text {
+            width: parent.width - 20px;
+            text: toast;
+            color: MeterState.copy-error != "" ? #fca5a5 : Theme.text-2;
+            font-size: 12px;
+            wrap: word-wrap;
+        }
+    }
+}
+
+export component MeterView inherits VerticalLayout {
+    spacing: 14px;
+    Controls { }
+    AlbionLabCard { recording: Shell.record-status == "running" || Shell.record-status == "paused"; }
+    BarsPanel { }
+}

@@ -1,0 +1,2037 @@
+{
+ "window": {
+  "width": 1280,
+  "height": 820
+ },
+ "health": {
+  "status": "ok",
+  "version": "0.2.0",
+  "platform": "linux",
+  "executable": "/opt/albion-meter/albion-meter"
+ },
+ "connected": true,
+ "snapshot": {
+  "id": "record-1",
+  "startedAt": "2026-11-26T21:00:00.000Z",
+  "elapsedSeconds": 3518.4,
+  "status": "running",
+  "mode": "live",
+  "sequence": 10,
+  "eventCount": 48211,
+  "totalDamage": 7653000,
+  "totalHealing": 4055900,
+  "members": [
+   {
+    "membership": "active",
+    "id": "p1",
+    "name": "Lusphu",
+    "weapon": "Chillhowl · T8.4",
+    "weaponFamily": "",
+    "color": "#9ebbf3",
+    "damage": 1312400,
+    "healing": 0,
+    "encounterDps": 373.01045929968166,
+    "encounterHps": 0.0,
+    "rollingDps": 0,
+    "rollingHps": 0,
+    "damageShare": 17.148830523977526,
+    "healingShare": 0.0
+   },
+   {
+    "membership": "active",
+    "id": "p2",
+    "name": "KitamuraMotoyasu",
+    "weapon": "Bloodletter · T7.1",
+    "weaponFamily": "",
+    "color": "#eab978",
+    "damage": 1254100,
+    "healing": 0,
+    "encounterDps": 356.4404274670305,
+    "encounterHps": 0.0,
+    "rollingDps": 0,
+    "rollingHps": 0,
+    "damageShare": 16.38703776296877,
+    "healingShare": 0.0
+   },
+   {
+    "membership": "active",
+    "id": "p3",
+    "name": "Edsonjds",
+    "weapon": "Realmbreaker · T7.2",
+    "weaponFamily": "",
+    "color": "#eb95b7",
+    "damage": 1201800,
+    "healing": 15400,
+    "encounterDps": 341.57571623465213,
+    "encounterHps": 4.376989540700318,
+    "rollingDps": 0,
+    "rollingHps": 0,
+    "damageShare": 15.703645629165033,
+    "healingShare": 0.37969377943243177
+   },
+   {
+    "membership": "active",
+    "id": "p4",
+    "name": "WaitMyPool",
+    "weapon": "Earthrune Staff · T7.4",
+    "weaponFamily": "",
+    "color": "#67cbd7",
+    "damage": 1150300,
+    "healing": 0,
+    "encounterDps": 326.9383810823101,
+    "encounterHps": 0.0,
+    "rollingDps": 0,
+    "rollingHps": 0,
+    "damageShare": 15.030706912321964,
+    "healingShare": 0.0
+   },
+   {
+    "membership": "active",
+    "id": "p5",
+    "name": "NekoKuro",
+    "weapon": "Black Monk Stave · T8.0",
+    "weaponFamily": "",
+    "color": "#b69aff",
+    "damage": 1013200,
+    "healing": 0,
+    "encounterDps": 287.9718053660755,
+    "encounterHps": 0.0,
+    "rollingDps": 0,
+    "rollingHps": 0,
+    "damageShare": 13.239252580687314,
+    "healingShare": 0.0
+   },
+   {
+    "membership": "active",
+    "id": "p6",
+    "name": "Tobolski01",
+    "weapon": "Elder's Light Crossbow · T8.1",
+    "weaponFamily": "",
+    "color": "#6dd1ad",
+    "damage": 837500,
+    "healing": 0,
+    "encounterDps": 238.0343337880855,
+    "encounterHps": 0.0,
+    "rollingDps": 0,
+    "rollingHps": 0,
+    "damageShare": 10.943420880700378,
+    "healingShare": 0.0
+   },
+   {
+    "membership": "active",
+    "id": "p7",
+    "name": "Jonsn0wISback",
+    "weapon": "Elder's Double Bladed Staff · T8.0",
+    "weaponFamily": "",
+    "color": "#f28b82",
+    "damage": 638100,
+    "healing": 0,
+    "encounterDps": 181.36084583901774,
+    "encounterHps": 0.0,
+    "rollingDps": 0,
+    "rollingHps": 0,
+    "damageShare": 8.337906703253626,
+    "healingShare": 0.0
+   },
+   {
+    "membership": "active",
+    "id": "p8",
+    "name": "Apocalypseeee",
+    "weapon": "Fallen Staff · T7.2",
+    "weaponFamily": "",
+    "color": "#c5d87a",
+    "damage": 120200,
+    "healing": 2410300,
+    "encounterDps": 34.16325602546612,
+    "encounterHps": 685.0557071396089,
+    "rollingDps": 0,
+    "rollingHps": 0,
+    "damageShare": 1.5706258983405201,
+    "healingShare": 59.427007569220144
+   },
+   {
+    "membership": "active",
+    "id": "p9",
+    "name": "KPey",
+    "weapon": "Master's Holy Staff · T7.4",
+    "weaponFamily": "",
+    "color": "#9ebbf3",
+    "damage": 8700,
+    "healing": 1630200,
+    "encounterDps": 2.4727148703956345,
+    "encounterHps": 463.3356070941337,
+    "rollingDps": 0,
+    "rollingHps": 0,
+    "damageShare": 0.11368090944727557,
+    "healingShare": 40.19329865134742
+   },
+   {
+    "membership": "active",
+    "id": "p10",
+    "name": "VoxBR1",
+    "weapon": "Weapon not observed",
+    "weaponFamily": "",
+    "color": "#eab978",
+    "damage": 116700,
+    "healing": 0,
+    "encounterDps": 33.168485675306954,
+    "encounterHps": 0.0,
+    "rollingDps": 0,
+    "rollingHps": 0,
+    "damageShare": 1.5248921991375932,
+    "healingShare": 0.0
+   },
+   {
+    "membership": "unconfirmed",
+    "id": "p11",
+    "name": "Ghost",
+    "weapon": "Unarmed",
+    "weaponFamily": "",
+    "color": "#c5d87a",
+    "damage": 0,
+    "healing": 0,
+    "encounterDps": 0,
+    "encounterHps": 0,
+    "rollingDps": 0,
+    "rollingHps": 0,
+    "damageShare": 0,
+    "healingShare": 0
+   }
+  ],
+  "formerMembers": [],
+  "weaponContributions": [],
+  "itemContributions": [],
+  "timeline": [],
+  "full": true
+ },
+ "albionlab": {
+  "server": "https://albionlab.app",
+  "connected": true,
+  "account": {
+   "name": "KPey",
+   "avatarUrl": ""
+  },
+  "pairing": null,
+  "pairingError": null,
+  "session": {
+   "id": "aBc123XyZ0",
+   "url": "https://albionlab.app/meter/aBc123XyZ0",
+   "visibility": "public",
+   "anonymize": false,
+   "state": "live",
+   "error": null,
+   "publishedAt": null,
+   "title": null
+  },
+  "shareLocation": false,
+  "visibility": "unlisted",
+  "anonymize": false,
+  "suggestedTitle": "Tumbleweed Hollow · Solo Dungeon"
+ },
+ "captureStatus": {
+  "state": "running",
+  "source": "live-capture",
+  "file": null,
+  "error": null,
+  "stopReason": null,
+  "library": "libpcap 1.10.5",
+  "adapter": {
+   "received": 26931,
+   "dropped": 0,
+   "interfaceDropped": 0
+  },
+  "report": {
+   "frames": 26931,
+   "bytes": 3355443,
+   "counters": {
+    "udpDatagrams": 26931,
+    "photonPackets": 26402,
+    "transportMessages": 31411,
+    "reliableCommands": 18850,
+    "fragments": 1077
+   },
+   "flows": {},
+   "combatDecoded": true,
+   "combatDiagnostics": {
+    "events": 24116,
+    "operationResponses": 2693,
+    "combatEvents": 48211,
+    "pendingUnidentified": 0
+   }
+  }
+ },
+ "devices": {
+  "available": true,
+  "library": "libpcap 1.10.5",
+  "debugEnabled": false,
+  "selectedDevice": "raw:all",
+  "methods": [
+   {
+    "id": "socket",
+    "name": "System socket (Linux)",
+    "available": true
+   },
+   {
+    "id": "pcap",
+    "name": "libpcap",
+    "available": true
+   }
+  ],
+  "devices": [
+   {
+    "name": "raw:all",
+    "description": "All interfaces (Linux socket)",
+    "method": "socket",
+    "flags": 0
+   },
+   {
+    "name": "raw:enp5s0",
+    "description": "enp5s0 (Linux socket)",
+    "method": "socket",
+    "flags": 1
+   },
+   {
+    "name": "enp5s0",
+    "description": "enp5s0",
+    "method": "pcap",
+    "flags": 1
+   }
+  ],
+  "error": null
+ },
+ "catalog": {
+  "schemaVersion": 1,
+  "source": "game",
+  "gameVersion": "albiononline-linux-full-1.32.030.345319",
+  "importedAt": "2026-11-20T18:04:00Z",
+  "sourceFile": "",
+  "sha256": "",
+  "mapCount": 140,
+  "maps": [
+   {
+    "id": "1000",
+    "name": "Thetford 1",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1001",
+    "name": "Lymhurst 1",
+    "type": "SAFEAREA",
+    "tier": 2,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1002",
+    "name": "Bridgewatch 1",
+    "type": "OPENPVP_YELLOW",
+    "tier": 3,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1003",
+    "name": "Martlock 1",
+    "type": "OPENPVP_RED",
+    "tier": 4,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1004",
+    "name": "Fort Sterling 1",
+    "type": "DUNGEON_SOLO",
+    "tier": 5,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1005",
+    "name": "Thetford 2",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1006",
+    "name": "Lymhurst 2",
+    "type": "SAFEAREA",
+    "tier": 7,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1007",
+    "name": "Bridgewatch 2",
+    "type": "OPENPVP_YELLOW",
+    "tier": 8,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1008",
+    "name": "Martlock 2",
+    "type": "OPENPVP_RED",
+    "tier": 1,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1009",
+    "name": "Fort Sterling 2",
+    "type": "DUNGEON_SOLO",
+    "tier": 2,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1010",
+    "name": "Thetford 3",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1011",
+    "name": "Lymhurst 3",
+    "type": "SAFEAREA",
+    "tier": 4,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1012",
+    "name": "Bridgewatch 3",
+    "type": "OPENPVP_YELLOW",
+    "tier": 5,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1013",
+    "name": "Martlock 3",
+    "type": "OPENPVP_RED",
+    "tier": 6,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1014",
+    "name": "Fort Sterling 3",
+    "type": "DUNGEON_SOLO",
+    "tier": 7,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1015",
+    "name": "Thetford 4",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1016",
+    "name": "Lymhurst 4",
+    "type": "SAFEAREA",
+    "tier": 1,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1017",
+    "name": "Bridgewatch 4",
+    "type": "OPENPVP_YELLOW",
+    "tier": 2,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1018",
+    "name": "Martlock 4",
+    "type": "OPENPVP_RED",
+    "tier": 3,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1019",
+    "name": "Fort Sterling 4",
+    "type": "DUNGEON_SOLO",
+    "tier": 4,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1020",
+    "name": "Thetford 5",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1021",
+    "name": "Lymhurst 5",
+    "type": "SAFEAREA",
+    "tier": 6,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1022",
+    "name": "Bridgewatch 5",
+    "type": "OPENPVP_YELLOW",
+    "tier": 7,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1023",
+    "name": "Martlock 5",
+    "type": "OPENPVP_RED",
+    "tier": 8,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1024",
+    "name": "Fort Sterling 5",
+    "type": "DUNGEON_SOLO",
+    "tier": 1,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1025",
+    "name": "Thetford 6",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1026",
+    "name": "Lymhurst 6",
+    "type": "SAFEAREA",
+    "tier": 3,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1027",
+    "name": "Bridgewatch 6",
+    "type": "OPENPVP_YELLOW",
+    "tier": 4,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1028",
+    "name": "Martlock 6",
+    "type": "OPENPVP_RED",
+    "tier": 5,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1029",
+    "name": "Fort Sterling 6",
+    "type": "DUNGEON_SOLO",
+    "tier": 6,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1030",
+    "name": "Thetford 7",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1031",
+    "name": "Lymhurst 7",
+    "type": "SAFEAREA",
+    "tier": 8,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1032",
+    "name": "Bridgewatch 7",
+    "type": "OPENPVP_YELLOW",
+    "tier": 1,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1033",
+    "name": "Martlock 7",
+    "type": "OPENPVP_RED",
+    "tier": 2,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1034",
+    "name": "Fort Sterling 7",
+    "type": "DUNGEON_SOLO",
+    "tier": 3,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1035",
+    "name": "Thetford 8",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1036",
+    "name": "Lymhurst 8",
+    "type": "SAFEAREA",
+    "tier": 5,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1037",
+    "name": "Bridgewatch 8",
+    "type": "OPENPVP_YELLOW",
+    "tier": 6,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1038",
+    "name": "Martlock 8",
+    "type": "OPENPVP_RED",
+    "tier": 7,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1039",
+    "name": "Fort Sterling 8",
+    "type": "DUNGEON_SOLO",
+    "tier": 8,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1040",
+    "name": "Thetford 9",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1041",
+    "name": "Lymhurst 9",
+    "type": "SAFEAREA",
+    "tier": 2,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1042",
+    "name": "Bridgewatch 9",
+    "type": "OPENPVP_YELLOW",
+    "tier": 3,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1043",
+    "name": "Martlock 9",
+    "type": "OPENPVP_RED",
+    "tier": 4,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1044",
+    "name": "Fort Sterling 9",
+    "type": "DUNGEON_SOLO",
+    "tier": 5,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1045",
+    "name": "Thetford 10",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1046",
+    "name": "Lymhurst 10",
+    "type": "SAFEAREA",
+    "tier": 7,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1047",
+    "name": "Bridgewatch 10",
+    "type": "OPENPVP_YELLOW",
+    "tier": 8,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1048",
+    "name": "Martlock 10",
+    "type": "OPENPVP_RED",
+    "tier": 1,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1049",
+    "name": "Fort Sterling 10",
+    "type": "DUNGEON_SOLO",
+    "tier": 2,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1050",
+    "name": "Thetford 11",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1051",
+    "name": "Lymhurst 11",
+    "type": "SAFEAREA",
+    "tier": 4,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1052",
+    "name": "Bridgewatch 11",
+    "type": "OPENPVP_YELLOW",
+    "tier": 5,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1053",
+    "name": "Martlock 11",
+    "type": "OPENPVP_RED",
+    "tier": 6,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1054",
+    "name": "Fort Sterling 11",
+    "type": "DUNGEON_SOLO",
+    "tier": 7,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1055",
+    "name": "Thetford 12",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1056",
+    "name": "Lymhurst 12",
+    "type": "SAFEAREA",
+    "tier": 1,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1057",
+    "name": "Bridgewatch 12",
+    "type": "OPENPVP_YELLOW",
+    "tier": 2,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1058",
+    "name": "Martlock 12",
+    "type": "OPENPVP_RED",
+    "tier": 3,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1059",
+    "name": "Fort Sterling 12",
+    "type": "DUNGEON_SOLO",
+    "tier": 4,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1060",
+    "name": "Thetford 13",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1061",
+    "name": "Lymhurst 13",
+    "type": "SAFEAREA",
+    "tier": 6,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1062",
+    "name": "Bridgewatch 13",
+    "type": "OPENPVP_YELLOW",
+    "tier": 7,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1063",
+    "name": "Martlock 13",
+    "type": "OPENPVP_RED",
+    "tier": 8,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1064",
+    "name": "Fort Sterling 13",
+    "type": "DUNGEON_SOLO",
+    "tier": 1,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1065",
+    "name": "Thetford 14",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1066",
+    "name": "Lymhurst 14",
+    "type": "SAFEAREA",
+    "tier": 3,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1067",
+    "name": "Bridgewatch 14",
+    "type": "OPENPVP_YELLOW",
+    "tier": 4,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1068",
+    "name": "Martlock 14",
+    "type": "OPENPVP_RED",
+    "tier": 5,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1069",
+    "name": "Fort Sterling 14",
+    "type": "DUNGEON_SOLO",
+    "tier": 6,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1070",
+    "name": "Thetford 15",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1071",
+    "name": "Lymhurst 15",
+    "type": "SAFEAREA",
+    "tier": 8,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1072",
+    "name": "Bridgewatch 15",
+    "type": "OPENPVP_YELLOW",
+    "tier": 1,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1073",
+    "name": "Martlock 15",
+    "type": "OPENPVP_RED",
+    "tier": 2,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1074",
+    "name": "Fort Sterling 15",
+    "type": "DUNGEON_SOLO",
+    "tier": 3,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1075",
+    "name": "Thetford 16",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1076",
+    "name": "Lymhurst 16",
+    "type": "SAFEAREA",
+    "tier": 5,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1077",
+    "name": "Bridgewatch 16",
+    "type": "OPENPVP_YELLOW",
+    "tier": 6,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1078",
+    "name": "Martlock 16",
+    "type": "OPENPVP_RED",
+    "tier": 7,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1079",
+    "name": "Fort Sterling 16",
+    "type": "DUNGEON_SOLO",
+    "tier": 8,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1080",
+    "name": "Thetford 17",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1081",
+    "name": "Lymhurst 17",
+    "type": "SAFEAREA",
+    "tier": 2,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1082",
+    "name": "Bridgewatch 17",
+    "type": "OPENPVP_YELLOW",
+    "tier": 3,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1083",
+    "name": "Martlock 17",
+    "type": "OPENPVP_RED",
+    "tier": 4,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1084",
+    "name": "Fort Sterling 17",
+    "type": "DUNGEON_SOLO",
+    "tier": 5,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1085",
+    "name": "Thetford 18",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1086",
+    "name": "Lymhurst 18",
+    "type": "SAFEAREA",
+    "tier": 7,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1087",
+    "name": "Bridgewatch 18",
+    "type": "OPENPVP_YELLOW",
+    "tier": 8,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1088",
+    "name": "Martlock 18",
+    "type": "OPENPVP_RED",
+    "tier": 1,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1089",
+    "name": "Fort Sterling 18",
+    "type": "DUNGEON_SOLO",
+    "tier": 2,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1090",
+    "name": "Thetford 19",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1091",
+    "name": "Lymhurst 19",
+    "type": "SAFEAREA",
+    "tier": 4,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1092",
+    "name": "Bridgewatch 19",
+    "type": "OPENPVP_YELLOW",
+    "tier": 5,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1093",
+    "name": "Martlock 19",
+    "type": "OPENPVP_RED",
+    "tier": 6,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1094",
+    "name": "Fort Sterling 19",
+    "type": "DUNGEON_SOLO",
+    "tier": 7,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1095",
+    "name": "Thetford 20",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1096",
+    "name": "Lymhurst 20",
+    "type": "SAFEAREA",
+    "tier": 1,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1097",
+    "name": "Bridgewatch 20",
+    "type": "OPENPVP_YELLOW",
+    "tier": 2,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1098",
+    "name": "Martlock 20",
+    "type": "OPENPVP_RED",
+    "tier": 3,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1099",
+    "name": "Fort Sterling 20",
+    "type": "DUNGEON_SOLO",
+    "tier": 4,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1100",
+    "name": "Thetford 21",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1101",
+    "name": "Lymhurst 21",
+    "type": "SAFEAREA",
+    "tier": 6,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1102",
+    "name": "Bridgewatch 21",
+    "type": "OPENPVP_YELLOW",
+    "tier": 7,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1103",
+    "name": "Martlock 21",
+    "type": "OPENPVP_RED",
+    "tier": 8,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1104",
+    "name": "Fort Sterling 21",
+    "type": "DUNGEON_SOLO",
+    "tier": 1,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1105",
+    "name": "Thetford 22",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1106",
+    "name": "Lymhurst 22",
+    "type": "SAFEAREA",
+    "tier": 3,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1107",
+    "name": "Bridgewatch 22",
+    "type": "OPENPVP_YELLOW",
+    "tier": 4,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1108",
+    "name": "Martlock 22",
+    "type": "OPENPVP_RED",
+    "tier": 5,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1109",
+    "name": "Fort Sterling 22",
+    "type": "DUNGEON_SOLO",
+    "tier": 6,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1110",
+    "name": "Thetford 23",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1111",
+    "name": "Lymhurst 23",
+    "type": "SAFEAREA",
+    "tier": 8,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1112",
+    "name": "Bridgewatch 23",
+    "type": "OPENPVP_YELLOW",
+    "tier": 1,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1113",
+    "name": "Martlock 23",
+    "type": "OPENPVP_RED",
+    "tier": 2,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1114",
+    "name": "Fort Sterling 23",
+    "type": "DUNGEON_SOLO",
+    "tier": 3,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1115",
+    "name": "Thetford 24",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1116",
+    "name": "Lymhurst 24",
+    "type": "SAFEAREA",
+    "tier": 5,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1117",
+    "name": "Bridgewatch 24",
+    "type": "OPENPVP_YELLOW",
+    "tier": 6,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1118",
+    "name": "Martlock 24",
+    "type": "OPENPVP_RED",
+    "tier": 7,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1119",
+    "name": "Fort Sterling 24",
+    "type": "DUNGEON_SOLO",
+    "tier": 8,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1120",
+    "name": "Thetford 25",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1121",
+    "name": "Lymhurst 25",
+    "type": "SAFEAREA",
+    "tier": 2,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1122",
+    "name": "Bridgewatch 25",
+    "type": "OPENPVP_YELLOW",
+    "tier": 3,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1123",
+    "name": "Martlock 25",
+    "type": "OPENPVP_RED",
+    "tier": 4,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1124",
+    "name": "Fort Sterling 25",
+    "type": "DUNGEON_SOLO",
+    "tier": 5,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1125",
+    "name": "Thetford 26",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1126",
+    "name": "Lymhurst 26",
+    "type": "SAFEAREA",
+    "tier": 7,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1127",
+    "name": "Bridgewatch 26",
+    "type": "OPENPVP_YELLOW",
+    "tier": 8,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1128",
+    "name": "Martlock 26",
+    "type": "OPENPVP_RED",
+    "tier": 1,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1129",
+    "name": "Fort Sterling 26",
+    "type": "DUNGEON_SOLO",
+    "tier": 2,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1130",
+    "name": "Thetford 27",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1131",
+    "name": "Lymhurst 27",
+    "type": "SAFEAREA",
+    "tier": 4,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1132",
+    "name": "Bridgewatch 27",
+    "type": "OPENPVP_YELLOW",
+    "tier": 5,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1133",
+    "name": "Martlock 27",
+    "type": "OPENPVP_RED",
+    "tier": 6,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1134",
+    "name": "Fort Sterling 27",
+    "type": "DUNGEON_SOLO",
+    "tier": 7,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1135",
+    "name": "Thetford 28",
+    "type": "CITY",
+    "tier": null,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1136",
+    "name": "Lymhurst 28",
+    "type": "SAFEAREA",
+    "tier": 1,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1137",
+    "name": "Bridgewatch 28",
+    "type": "OPENPVP_YELLOW",
+    "tier": 2,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1138",
+    "name": "Martlock 28",
+    "type": "OPENPVP_RED",
+    "tier": 3,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   },
+   {
+    "id": "1139",
+    "name": "Fort Sterling 28",
+    "type": "DUNGEON_SOLO",
+    "tier": 4,
+    "file": "",
+    "enabled": true,
+    "exits": []
+   }
+  ],
+  "weaponCount": 32,
+  "weapons": [
+   {
+    "id": "T2_2H_BOW",
+    "name": "Novice's Bow",
+    "family": "bow",
+    "tier": 2,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T3_2H_BOW",
+    "name": "Journeyman's Bow",
+    "family": "bow",
+    "tier": 3,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T4_2H_BOW",
+    "name": "Adept's Bow",
+    "family": "bow",
+    "tier": 4,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T5_2H_BOW",
+    "name": "Expert's Bow",
+    "family": "bow",
+    "tier": 5,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T6_2H_BOW",
+    "name": "Master's Bow",
+    "family": "bow",
+    "tier": 6,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T7_2H_BOW",
+    "name": "Grandmaster's Bow",
+    "family": "bow",
+    "tier": 7,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T8_2H_BOW",
+    "name": "Elder's Bow",
+    "family": "bow",
+    "tier": 8,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T4_2H_WARBOW",
+    "name": "Adept's Warbow",
+    "family": "bow",
+    "tier": 4,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T5_2H_WARBOW",
+    "name": "Expert's Warbow",
+    "family": "bow",
+    "tier": 5,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T6_2H_WARBOW",
+    "name": "Master's Warbow",
+    "family": "bow",
+    "tier": 6,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T7_2H_WARBOW",
+    "name": "Grandmaster's Warbow",
+    "family": "bow",
+    "tier": 7,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T8_2H_WARBOW",
+    "name": "Elder's Warbow",
+    "family": "bow",
+    "tier": 8,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T4_2H_LONGBOW",
+    "name": "Adept's Longbow",
+    "family": "bow",
+    "tier": 4,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T5_2H_LONGBOW",
+    "name": "Expert's Longbow",
+    "family": "bow",
+    "tier": 5,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T6_2H_LONGBOW",
+    "name": "Master's Longbow",
+    "family": "bow",
+    "tier": 6,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T7_2H_LONGBOW",
+    "name": "Grandmaster's Longbow",
+    "family": "bow",
+    "tier": 7,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T8_2H_LONGBOW",
+    "name": "Elder's Longbow",
+    "family": "bow",
+    "tier": 8,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T4_MAIN_FIRESTAFF",
+    "name": "Adept's Fire Staff",
+    "family": "firestaff",
+    "tier": 4,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T5_MAIN_FIRESTAFF",
+    "name": "Expert's Fire Staff",
+    "family": "firestaff",
+    "tier": 5,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T6_MAIN_FIRESTAFF",
+    "name": "Master's Fire Staff",
+    "family": "firestaff",
+    "tier": 6,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T7_MAIN_FIRESTAFF",
+    "name": "Grandmaster's Fire Staff",
+    "family": "firestaff",
+    "tier": 7,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T8_MAIN_FIRESTAFF",
+    "name": "Elder's Fire Staff",
+    "family": "firestaff",
+    "tier": 8,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T4_2H_ARCANESTAFF",
+    "name": "Adept's Great Arcane Staff",
+    "family": "arcanestaff",
+    "tier": 4,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T5_2H_ARCANESTAFF",
+    "name": "Expert's Great Arcane Staff",
+    "family": "arcanestaff",
+    "tier": 5,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T6_2H_ARCANESTAFF",
+    "name": "Master's Great Arcane Staff",
+    "family": "arcanestaff",
+    "tier": 6,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T7_2H_ARCANESTAFF",
+    "name": "Grandmaster's Great Arcane Staff",
+    "family": "arcanestaff",
+    "tier": 7,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T8_2H_ARCANESTAFF",
+    "name": "Elder's Great Arcane Staff",
+    "family": "arcanestaff",
+    "tier": 8,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T4_MAIN_SWORD",
+    "name": "Adept's Broadsword",
+    "family": "sword",
+    "tier": 4,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T5_MAIN_SWORD",
+    "name": "Expert's Broadsword",
+    "family": "sword",
+    "tier": 5,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T6_MAIN_SWORD",
+    "name": "Master's Broadsword",
+    "family": "sword",
+    "tier": 6,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T7_MAIN_SWORD",
+    "name": "Grandmaster's Broadsword",
+    "family": "sword",
+    "tier": 7,
+    "slot": "mainhand"
+   },
+   {
+    "id": "T8_MAIN_SWORD",
+    "name": "Elder's Broadsword",
+    "family": "sword",
+    "tier": 8,
+    "slot": "mainhand"
+   }
+  ],
+  "indexedWeapons": [
+   {
+    "id": "T8_MAIN_FROSTSTAFF_AVALON@4",
+    "name": "Chillhowl",
+    "tier": 8,
+    "enchantment": 4
+   },
+   {
+    "id": "T7_MAIN_RAPIER_MORGANA@1",
+    "name": "Bloodletter",
+    "tier": 7,
+    "enchantment": 1
+   },
+   {
+    "id": "T7_2H_AXE_AVALON@2",
+    "name": "Realmbreaker",
+    "tier": 7,
+    "enchantment": 2
+   },
+   {
+    "id": "T7_2H_SHAPESHIFTER_AVALON@4",
+    "name": "Earthrune Staff",
+    "tier": 7,
+    "enchantment": 4
+   },
+   {
+    "id": "T8_2H_COMBATSTAFF_MORGANA",
+    "name": "Black Monk Stave",
+    "tier": 8,
+    "enchantment": 0
+   },
+   {
+    "id": "T8_MAIN_1HCROSSBOW@1",
+    "name": "Elder's Light Crossbow",
+    "tier": 8,
+    "enchantment": 1
+   },
+   {
+    "id": "T8_2H_DOUBLEBLADEDSTAFF",
+    "name": "Elder's Double Bladed Staff",
+    "tier": 8,
+    "enchantment": 0
+   },
+   {
+    "id": "T7_2H_HOLYSTAFF_HELL@2",
+    "name": "Fallen Staff",
+    "tier": 7,
+    "enchantment": 2
+   },
+   {
+    "id": "T7_MAIN_HOLYSTAFF@4",
+    "name": "Master's Holy Staff",
+    "tier": 7,
+    "enchantment": 4
+   }
+  ]
+ },
+ "storage": {
+  "databasePath": "/home/player/.local/share/AlbionMeter/encounters.db"
+ },
+ "icons": {
+  "T8_MAIN_FROSTSTAFF_AVALON@4": "icons/T8_MAIN_FROSTSTAFF_AVALON@4.png",
+  "T7_MAIN_RAPIER_MORGANA@1": "icons/T7_MAIN_RAPIER_MORGANA@1.png",
+  "T7_2H_AXE_AVALON@2": "icons/T7_2H_AXE_AVALON@2.png",
+  "T7_2H_SHAPESHIFTER_AVALON@4": "icons/T7_2H_SHAPESHIFTER_AVALON@4.png",
+  "T8_2H_COMBATSTAFF_MORGANA": "icons/T8_2H_COMBATSTAFF_MORGANA.png",
+  "T8_MAIN_1HCROSSBOW@1": "icons/T8_MAIN_1HCROSSBOW@1.png",
+  "T8_2H_DOUBLEBLADEDSTAFF": "icons/T8_2H_DOUBLEBLADEDSTAFF.png",
+  "T7_2H_HOLYSTAFF_HELL@2": "icons/T7_2H_HOLYSTAFF_HELL@2.png",
+  "T7_MAIN_HOLYSTAFF@4": "icons/T7_MAIN_HOLYSTAFF@4.png"
+ },
+ "update": {
+  "state": "idle"
+ },
+ "ui": {
+  "view": "meter",
+  "metric": "damage",
+  "language": "en",
+  "confirm": ""
+ },
+ "screens": {
+  "loading": {
+   "connected": false,
+   "snapshot": null
+  },
+  "meter-damage": {},
+  "meter-healing": {
+   "ui": {
+    "metric": "healing"
+   }
+  },
+  "meter-pt": {
+   "ui": {
+    "language": "pt"
+   }
+  },
+  "meter-idle": {
+   "snapshot": {
+    "status": "idle",
+    "elapsedSeconds": 0,
+    "members": [],
+    "totalDamage": 0,
+    "totalHealing": 0
+   },
+   "albionlab": {
+    "session": null
+   }
+  },
+  "meter-paused": {
+   "snapshot": {
+    "status": "paused"
+   }
+  },
+  "meter-completed": {
+   "snapshot": {
+    "status": "completed"
+   },
+   "albionlab": {
+    "session": {
+     "state": "completed"
+    }
+   }
+  },
+  "confirm-reset": {
+   "ui": {
+    "confirm": "reset"
+   }
+  },
+  "confirm-end": {
+   "ui": {
+    "confirm": "end"
+   }
+  },
+  "lab-disconnected": {
+   "albionlab": {
+    "connected": false,
+    "account": null,
+    "session": null,
+    "pairingError": "revoked"
+   }
+  },
+  "lab-pairing": {
+   "albionlab": {
+    "connected": false,
+    "account": null,
+    "session": null,
+    "pairing": {
+     "code": "K7Q-4PM",
+     "verifyUrl": "https://albionlab.app/pair?code=K7Q-4PM",
+     "expiresAt": "2026-11-26T22:00:00Z"
+    }
+   }
+  },
+  "lab-nosession": {
+   "snapshot": {
+    "status": "completed"
+   },
+   "albionlab": {
+    "session": null
+   }
+  },
+  "capture-failed": {
+   "captureStatus": {
+    "state": "failed",
+    "error": null,
+    "stopReason": "sourceEnded"
+   }
+  },
+  "capture": {
+   "ui": {
+    "view": "capture"
+   }
+  },
+  "capture-permission": {
+   "ui": {
+    "view": "capture"
+   },
+   "captureStatus": {
+    "state": "failed",
+    "error": "Packet capture permission denied: CAP_NET_RAW is missing.",
+    "report": null,
+    "adapter": null
+   }
+  },
+  "game-data": {
+   "ui": {
+    "view": "game"
+   }
+  },
+  "game-data-pt": {
+   "ui": {
+    "view": "game",
+    "language": "pt"
+   }
+  },
+  "update-downloading": {
+   "update": {
+    "state": "downloading",
+    "version": "0.2.1",
+    "percent": 42,
+    "transferred": 20160000,
+    "total": 48000000
+   }
+  },
+  "update-ready": {
+   "update": {
+    "state": "ready",
+    "version": "0.2.1"
+   }
+  },
+  "error-banner": {
+   "snapshot": {
+    "status": "idle",
+    "elapsedSeconds": 0,
+    "members": [],
+    "totalDamage": 0,
+    "totalHealing": 0
+   },
+   "albionlab": {
+    "session": null
+   },
+   "commandError": "Stop the current record before starting another one.",
+   "ui": {
+    "action": "play"
+   }
+  },
+  "meter-pt-paused": {
+   "snapshot": {
+    "status": "paused"
+   },
+   "ui": {
+    "language": "pt"
+   }
+  },
+  "lab-loading": {
+   "albionlab": null
+  }
+ }
+}

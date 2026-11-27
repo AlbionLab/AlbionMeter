@@ -1,0 +1,21 @@
+// The English text is the key, as in web/src/i18n.ts; Rust answers the Portuguese one. Every binding that calls `s` reads
+// `pt`, so switching the language re-evaluates them all.
+export global T {
+    in-out property <bool> pt;
+    pure callback lookup(string) -> string;
+    // Replaces `{name}` with `value` in `text`.
+    pure callback fill(string, string, string) -> string;
+
+    // text-transform: capitalize
+    pure callback capitalize(string) -> string;
+
+    public pure function s(text: string) -> string {
+        return pt ? lookup(text) : text;
+    }
+    public pure function f(text: string, name: string, value: string) -> string {
+        return fill(s(text), name, value);
+    }
+    public pure function cap(text: string) -> string {
+        return capitalize(s(text));
+    }
+}

@@ -4,3 +4,13 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+# winit + femtovg (OpenGL) with the software renderer as the fallback for machines without a usable GPU driver; no Qt,
+# no Skia, no accessibility bridge, no system tray: they would double the binary.
+slint = { version = "1.19", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg", "renderer-software", "software-renderer-path", "unstable-winit-030"] }
+
+serde.workspace = true
+# Object keys keep the server's order (the diagnostics are listed in it).
+serde_json = { workspace = true, features = ["preserve_order"] }
+
+[build-dependencies]
+slint-build = "1.19"

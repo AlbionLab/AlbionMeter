@@ -1,0 +1,70 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { T } from "i18n.slint";
+import { Shell, MeterState, LabState, CaptureState, CatalogState } from "state.slint";
+import { Banner } from "widgets.slint";
+import { Header, UpdateToast, AppLoading, ResizeEdges } from "chrome.slint";
+import { MeterView, CaptureNotice, ConfirmModal } from "meter.slint";
+import { CaptureView } from "capture.slint";
+import { GameView } from "library.slint";
+import { JournalView, JournalState } from "journal.slint";
+
+export { Theme, T, Shell, MeterState, LabState, CaptureState, CatalogState, JournalState }
+
+// The frameless window of desktop/main.js (820×560 minimum) holding the whole of web/src/main.tsx.
+export component AppWindow inherits Window {
+    in property <string> clipboard;
+    private property <bool> loading: !Shell.has-snapshot && Shell.connection != "connected";
+    // Copies `clipboard` through Slint's own clipboard (the platform's, on X11, Wayland and Windows alike).
+    public function copy-clipboard() {
+        clip.select-all();
+        clip.copy();
+    }
+    title: "Albion Meter";
+    icon: @image-url("../assets/icon.png");
+    no-frame: true;
+    min-width: 820px;
+    min-height: 560px;
+    preferred-width: 1280px;
+    preferred-height: 820px;
+    background: Theme.bg;
+    default-font-family: Theme.sans;
+    default-font-size: 13px;
+    init => {
+        Shell.window-width = self.width;
+        Shell.window-height = self.height;
+    }
+    changed width => { Shell.window-width = self.width; }
+    changed height => { Shell.window-height = self.height; }
+    clip := TextInput { x: 0; y: 0; width: 1px; height: 1px; opacity: 0; text: root.clipboard; single-line: false; enabled: false; }
+    VerticalLayout {
+        Header { }
+        if loading: AppLoading { vertical-stretch: 1; }
+        if !loading: scroll := ScrollView {
+            vertical-stretch: 1;
+            content-width: self.visible-width;
+            content-height: content.preferred-height;
+            content := VerticalLayout {
+                width: scroll.visible-width;
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-top: 18px;
+                padding-bottom: 40px;
+                spacing: 14px;
+                alignment: start;
+                if Shell.error != "": Banner { text: Shell.error; action: T.s("Dismiss"); act => { Shell.dismiss-error(); } }
+                if Shell.view != "capture" && (MeterState.notice-failed || MeterState.notice-pending != ""): CaptureNotice { open-capture => { Shell.view = "capture"; } }
+                if Shell.view == "meter": MeterView { }
+                if Shell.view == "capture": CaptureView { }
+                if Shell.view == "game": GameView { }
+                if Shell.view == "journal": JournalView { }
+            }
+        }
+    }
+    UpdateToast {
+        x: root.width - self.width - 20px;
+        y: root.height - self.height - 20px;
+    }
+    if MeterState.confirm != "": ConfirmModal { width: root.width; height: root.height; }
+    if !Shell.maximized: ResizeEdges { width: root.width; height: root.height; }
+}

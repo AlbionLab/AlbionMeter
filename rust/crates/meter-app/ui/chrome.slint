@@ -1,0 +1,232 @@
+import { Theme } from "theme.slint";
+import { Icon, Icons } from "icons.slint";
+import { T } from "i18n.slint";
+import { Shell } from "state.slint";
+import { Button, Segmented, SegButton, Spinner } from "widgets.slint";
+
+// web/src/DesktopChrome.tsx WindowControls: minimize, maximize/restore and close, the full height of the bar.
+component WindowButton {
+    in property <bool> close;
+    in property <length> w: 46px;
+    callback clicked();
+    width: w;
+    Rectangle {
+        background: touch.has-hover ? (close ? #e81123 : #ffffff10) : transparent;
+        animate background { duration: 150ms; }
+    }
+    @children
+    touch := TouchArea { clicked => { root.clicked(); } }
+    out property <color> ink: touch.has-hover ? (close ? #fff : Theme.text) : Theme.muted;
+}
+
+export component WindowControls inherits HorizontalLayout {
+    in property <bool> narrow;
+    in property <bool> can-maximize: true;
+    min := WindowButton {
+        w: narrow ? 40px : 46px;
+        clicked => { Shell.window-action("minimize"); }
+        Path { width: 10px; height: 10px; viewbox-width: 10; viewbox-height: 10; commands: "M0 5h10"; stroke: min.ink; stroke-width: 1px; }
+    }
+    if can-maximize: max := WindowButton {
+        w: narrow ? 40px : 46px;
+        clicked => { Shell.window-action("maximize"); }
+        if Shell.maximized: Path { width: 10px; height: 10px; viewbox-width: 10; viewbox-height: 10; commands: "M2.5 2.5V.5h7v7h-2M.5 2.5h7v7h-7z"; stroke: max.ink; stroke-width: 1px; fill: transparent; }
+        if !Shell.maximized: Path { width: 10px; height: 10px; viewbox-width: 10; viewbox-height: 10; commands: "M.5 .5h9v9h-9z"; stroke: max.ink; stroke-width: 1px; fill: transparent; }
+    }
+    close := WindowButton {
+        close: true;
+        w: narrow ? 40px : 46px;
+        clicked => { Shell.window-action("close"); }
+        Path { width: 10px; height: 10px; viewbox-width: 10; viewbox-height: 10; commands: "M0 0l10 10M10 0L0 10"; stroke: close.ink; stroke-width: 1.1px; }
+    }
+}
+
+// The top bar of main.tsx: brand and version, the views, the language, the record state and the window controls. The
+// empty parts of the bar move the window (it has no system frame), and a double click maximizes it.
+export component Header inherits Rectangle {
+    // The narrow-window variants of styles.css (≤780px without nav labels, ≤560px without the brand name) never apply:
+    // the window is at least 820px wide.
+    private property <string> status: Shell.record-status;
+    private property <string> pill: Shell.connection != "connected" ? "warn" : status == "running" ? "live" : status == "paused" ? "warn" : "off";
+    height: 52px;
+    background: Theme.bar;
+    TouchArea {
+        pointer-event(event) => {
+            if event.kind == PointerEventKind.down && event.button == PointerEventButton.left { Shell.window-action("drag"); }
+        }
+        double-clicked => { Shell.window-action("maximize"); }
+    }
+    Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+    HorizontalLayout {
+        padding-left: 20px;
+        spacing: 16px;
+        HorizontalLayout {
+            spacing: 10px;
+            Image { source: @image-url("../assets/mark.png"); width: 26px; height: 26px; y: (parent.height - 26px) / 2; }
+            Text {
+                text: "ALBION METER";
+                color: Theme.text;
+                font-size: 14px;
+                font-weight: 800;
+                letter-spacing: 1.12px;
+                vertical-alignment: center;
+            }
+            if Shell.version != "": Rectangle {
+                height: 19px;
+                y: (parent.height - self.height) / 2;
+                min-width: version.preferred-width + 14px;
+                border-width: 1px;
+                border-color: Theme.border;
+                border-radius: 9.5px;
+                version := Text { text: "v" + Shell.version; color: Theme.muted; font-size: 10.5px; font-weight: 600; letter-spacing: 0.2px; }
+            }
+        }
+        Rectangle { horizontal-stretch: 1; }
+        Segmented {
+            y: (parent.height - self.height) / 2;
+            height: 32px;
+            SegButton { icon: Icons.activity; text: T.s("Meter"); active: Shell.view == "meter"; clicked => { Shell.view = "meter"; } }
+            SegButton { icon: Icons.database; text: T.s("Capture"); active: Shell.view == "capture"; clicked => { Shell.view = "capture"; } }
+            SegButton { icon: Icons.sword; text: T.s("Game data"); active: Shell.view == "game"; clicked => { Shell.view = "game"; } }
+            if Shell.journal-enabled: SegButton { icon: Icons.layers; text: "Dungeons"; active: Shell.view == "journal"; clicked => { Shell.view = "journal"; } }
+        }
+        Segmented {
+            y: (parent.height - self.height) / 2;
+            height: 32px;
+            SegButton { text: "EN"; mono: true; pad: 8px; active: !T.pt; clicked => { Shell.set-language(false); } }
+            SegButton { text: "PT"; mono: true; pad: 8px; active: T.pt; clicked => { Shell.set-language(true); } }
+        }
+        Rectangle {
+            private property <color> ink: pill == "live" ? Theme.good : pill == "warn" ? Theme.warn : Theme.muted;
+            y: (parent.height - self.height) / 2;
+            height: 30px;
+            width: pill-row.preferred-width;
+            horizontal-stretch: 0;
+            border-radius: 15px;
+            border-width: 1px;
+            border-color: pill == "off" ? Theme.border-strong : ink.with-alpha(0.25);
+            background: pill == "off" ? Theme.surface-2 : ink.with-alpha(0.07);
+            pill-row := HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 8px;
+                Rectangle { width: 7px; height: 7px; y: (parent.height - 7px) / 2; border-radius: 3.5px; background: pill == "off" ? Theme.faint : ink; }
+                Text {
+                    text: T.s(Shell.connection != "connected" ? "Reconnecting" : status == "running" ? "Recording" : status == "paused" ? "Paused" : status == "completed" ? "Stopped" : "Ready");
+                    color: ink;
+                    font-size: 12px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        WindowControls { }
+    }
+}
+
+// web/src/DesktopChrome.tsx UpdateToast: download progress, then the offer to restart.
+export component UpdateToast inherits Rectangle {
+    private property <bool> ready: Shell.update-state == "ready" || Shell.update-state == "installing";
+    private property <bool> installing: Shell.update-state == "installing";
+    visible: Shell.update-state == "downloading" || (ready && Shell.update-later != Shell.update-version);
+    width: 360px;
+    height: column.preferred-height;
+    border-width: 1px;
+    border-color: ready ? #f08a2466 : Theme.border-strong;
+    border-radius: 12px;
+    background: Theme.surface;
+    drop-shadow-blur: 22px;
+    drop-shadow-offset-y: 9px;
+    drop-shadow-color: #000000aa;
+    TouchArea { }
+    column := VerticalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        padding-top: 14px;
+        padding-bottom: 14px;
+        spacing: 10px;
+        HorizontalLayout {
+            spacing: 9px;
+            Rectangle {
+                width: 8px;
+                height: 8px;
+                y: (parent.height - 8px) / 2;
+                border-radius: 4px;
+                background: Theme.accent;
+                Rectangle { width: 16px; height: 16px; border-radius: 8px; background: Theme.accent-soft; }
+            }
+            Text {
+                text: T.f(ready ? "Albion Meter {version} is ready" : "Downloading Albion Meter {version}", "version", Shell.update-version);
+                color: Theme.text;
+                font-size: 13px;
+                font-weight: 700;
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+            }
+            if !ready: Text { text: Shell.update-percent + "%"; color: Theme.muted; font-family: Theme.mono; font-size: 12px; vertical-alignment: center; }
+        }
+        if !ready: Rectangle {
+            height: 6px;
+            border-radius: 3px;
+            background: Theme.surface-3;
+            clip: true;
+            Rectangle { x: 0; width: parent.width * Shell.update-percent / 100; border-radius: 3px; background: Theme.accent; }
+        }
+        VerticalLayout {
+            spacing: 1px;
+            Text {
+                text: ready ? T.s("Restarting stops the current record. If you wait, it installs when you close the meter.")
+                    : Shell.update-progress + T.s("Keeps running while you play.");
+                color: Theme.muted;
+                font-size: 12px;
+                wrap: word-wrap;
+            }
+            // The link follows the note (inline in the web toast).
+            HorizontalLayout {
+                alignment: start;
+                VerticalLayout {
+                    Text { text: T.s("What's new"); color: Theme.text; font-size: 12px; }
+                    Rectangle { height: 1px; background: Theme.text; }
+                    TouchArea { mouse-cursor: pointer; clicked => { Shell.open-url("https://github.com/AlbionLab/AlbionMeter/releases/tag/v" + Shell.update-version); } }
+                }
+            }
+        }
+        if ready: HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            if ready: Button { text: T.s("Later"); enabled: !installing; clicked => { Shell.update-later = Shell.update-version; } }
+            if ready: Button { text: T.s(installing ? "Restarting…" : "Restart and update"); variant: "primary"; enabled: !installing; clicked => { Shell.install-update(); } }
+        }
+    }
+}
+
+// web/src/DesktopChrome.tsx AppLoading: shown until the first snapshot arrives.
+export component AppLoading {
+    VerticalLayout {
+        alignment: center;
+        spacing: 14px;
+        Image { source: @image-url("../assets/mark.png"); width: 56px; height: 56px; x: (parent.width - 56px) / 2; }
+        Spinner { x: (parent.width - 18px) / 2; }
+        Text { text: T.s("Loading the meter…"); color: Theme.muted; font-size: 13px; horizontal-alignment: center; }
+    }
+}
+
+component Edge inherits TouchArea {
+    in property <string> side;
+    pointer-event(event) => {
+        if event.kind == PointerEventKind.down && event.button == PointerEventButton.left { Shell.window-action("resize-" + side); }
+    }
+}
+
+// The edges of the frameless window: dragging one resizes it.
+export component ResizeEdges {
+    in property <length> grip: 5px;
+    Edge { side: "n"; x: grip; y: 0; width: parent.width - 2 * grip; height: grip; mouse-cursor: ns-resize; }
+    Edge { side: "s"; x: grip; y: parent.height - grip; width: parent.width - 2 * grip; height: grip; mouse-cursor: ns-resize; }
+    Edge { side: "w"; x: 0; y: grip; width: grip; height: parent.height - 2 * grip; mouse-cursor: ew-resize; }
+    Edge { side: "e"; x: parent.width - grip; y: grip; width: grip; height: parent.height - 2 * grip; mouse-cursor: ew-resize; }
+    Edge { side: "nw"; x: 0; y: 0; width: grip; height: grip; mouse-cursor: nwse-resize; }
+    Edge { side: "se"; x: parent.width - grip; y: parent.height - grip; width: grip; height: grip; mouse-cursor: nwse-resize; }
+    Edge { side: "ne"; x: parent.width - grip; y: 0; width: grip; height: grip; mouse-cursor: nesw-resize; }
+    Edge { side: "sw"; x: 0; y: parent.height - grip; width: grip; height: grip; mouse-cursor: nesw-resize; }
+}

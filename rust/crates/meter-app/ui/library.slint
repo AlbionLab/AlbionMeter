@@ -1,0 +1,165 @@
+import { Theme } from "theme.slint";
+import { T } from "i18n.slint";
+import { CatalogState, CatalogRow, Shell } from "state.slint";
+import { Button, Segmented, SegButton, Panel, PanelHeading, TextField, SideRow, SideNote, CountBadge } from "widgets.slint";
+
+component HeaderCell inherits Text {
+    color: Theme.muted;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.84px;
+    vertical-alignment: center;
+}
+
+component CatalogTable {
+    in property <bool> narrow;
+    private property <length> pad: 14px;
+    // NAME 40% · FAMILY 25% · TIER 10% · ID 25% (the browser's auto table layout, roughly).
+    private property <length> c1: (self.width - 2 * pad) * 0.4;
+    private property <length> c2: (self.width - 2 * pad) * 0.25;
+    private property <length> c3: (self.width - 2 * pad) * 0.1;
+    VerticalLayout {
+        Rectangle {
+            height: 38px;
+            HeaderCell { x: pad; width: c1; text: T.s("NAME"); }
+            HeaderCell { x: pad + c1; width: c2; text: T.s(CatalogState.tab == "weapons" ? "WEAPON FAMILY" : "MAP TYPE"); }
+            HeaderCell { x: pad + c1 + c2; width: c3; text: T.s("TIER"); }
+            HeaderCell { x: pad + c1 + c2 + c3; text: "ID"; }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+        }
+        for row in CatalogState.rows: Rectangle {
+            height: 43px;
+            background: touch.has-hover ? Theme.hover : transparent;
+            touch := TouchArea { }
+            Text { x: pad; width: c1 - 12px; text: row.name; color: Theme.text; font-size: 13px; font-weight: 500; overflow: elide; vertical-alignment: center; }
+            Text { x: pad + c1; width: c2 - 12px; text: row.group; color: Theme.text-2; font-size: 13px; overflow: elide; vertical-alignment: center; }
+            if row.tier != "": CountBadge { x: pad + c1 + c2; text: row.tier; }
+            if row.tier == "": Text { x: pad + c1 + c2; text: "—"; color: Theme.muted; font-size: 13px; vertical-alignment: center; }
+            Text { x: pad + c1 + c2 + c3; width: parent.width - self.x - pad; text: row.id; color: Theme.muted; font-family: Theme.mono; font-size: 12px; overflow: elide; vertical-alignment: center; }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.row; }
+        }
+    }
+}
+
+component SidePanel inherits Panel {
+    in property <string> title;
+    min-height: column.preferred-height;
+    column := VerticalLayout {
+        PanelHeading { title: root.title; }
+        @children
+    }
+}
+
+component SideStack inherits VerticalLayout {
+    spacing: 14px;
+    SidePanel {
+        title: T.s("Import game data");
+        VerticalLayout {
+            padding: 16px;
+            spacing: 12px;
+            alignment: start;
+            Text { text: T.s("Select the installed game folder. Only world.bin, items.bin, localization.bin and the version identifier are read. Processing stays on your local server."); color: Theme.muted; font-size: 12.5px; wrap: word-wrap; }
+            HorizontalLayout {
+                alignment: start;
+                Button { text: T.s(CatalogState.busy ? "Importing…" : "Import game folder"); variant: "primary"; enabled: !CatalogState.busy; clicked => { CatalogState.import(); } }
+            }
+            if CatalogState.message != "": Text { text: CatalogState.message; color: Theme.text-2; font-size: 12.5px; wrap: word-wrap; }
+        }
+    }
+    SidePanel {
+        title: T.s("Catalog");
+        VerticalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 6px;
+            padding-bottom: 6px;
+            SideRow { first: true; label: T.s("Maps"); value: CatalogState.maps-kept; }
+            SideRow { label: T.s("Weapon definitions"); value: CatalogState.weapons-kept; }
+            SideRow { label: T.s("Game version"); value: CatalogState.game-version != "" ? CatalogState.game-version : T.s("Unknown"); }
+            SideRow { label: T.s("Imported"); value: CatalogState.imported; }
+        }
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 4px;
+            padding-bottom: 14px;
+            SideNote { text: T.s("Random dungeon instances may only have a generic name in the game dictionary."); }
+        }
+    }
+    SidePanel {
+        title: T.s("Local records");
+        VerticalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 6px;
+            padding-bottom: 6px;
+            SideRow { first: true; label: T.s("Encounters kept"); value: "100"; }
+            SideRow { label: T.s("Dungeon runs kept"); value: "100"; }
+        }
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 4px;
+            padding-bottom: 14px;
+            SideNote { text: CatalogState.storage; font-family: Theme.mono; }
+        }
+    }
+}
+
+component CatalogPanel inherits Panel {
+    min-height: column.preferred-height;
+    column := VerticalLayout {
+        PanelHeading {
+            title: T.s("Game catalog");
+            note: T.f("Game version {version}", "version", CatalogState.game-version != "" ? CatalogState.game-version : T.s("unknown"));
+            Segmented {
+                SegButton { text: T.s("Weapons"); count: CatalogState.weapon-count; active: CatalogState.tab == "weapons"; clicked => { CatalogState.tab-changed("weapons"); } }
+                SegButton { text: T.s("Maps"); count: CatalogState.map-count; active: CatalogState.tab == "maps"; clicked => { CatalogState.tab-changed("maps"); } }
+            }
+            TextField {
+                search: true;
+                h: 32px;
+                width: 260px;
+                text: CatalogState.search;
+                placeholder: T.s("Search name, family or ID…");
+                edited(value) => { CatalogState.search-changed(value); }
+            }
+        }
+        // .catalog-table: at most the window height less 290px, scrolling inside.
+        Flickable {
+            height: min(table.preferred-height, max(120px, Shell.window-height - 290px));
+            content-height: table.preferred-height;
+            table := CatalogTable { width: parent.width; }
+        }
+        if CatalogState.empty: Text {
+            text: T.s(CatalogState.tab == "weapons" ? "No weapons match your search." : "No maps match your search.");
+            color: Theme.muted;
+            font-size: 12.5px;
+            height: 62px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+        Rectangle { height: 1px; background: Theme.border; }
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 10px;
+            padding-bottom: 10px;
+            Text { text: CatalogState.results; color: Theme.muted; font-size: 12px; }
+        }
+    }
+}
+
+// web/src/Library.tsx GameLibrary: the imported weapons and maps, the folder import and where records are kept.
+export component GameView inherits VerticalLayout {
+    private property <bool> columns: self.width > 1240px;
+    spacing: 14px;
+    if columns: HorizontalLayout {
+        spacing: 14px;
+        alignment: start;
+        CatalogPanel { horizontal-stretch: 1; }
+        SideStack { width: 320px; }
+    }
+    if !columns: CatalogPanel { }
+    if !columns: SideStack { }
+}

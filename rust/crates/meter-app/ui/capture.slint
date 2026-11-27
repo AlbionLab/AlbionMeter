@@ -1,0 +1,214 @@
+import { Theme } from "theme.slint";
+import { Icons } from "icons.slint";
+import { T } from "i18n.slint";
+import { CaptureState, DiagRow } from "state.slint";
+import { Button, Select, Panel, PanelHeading, StatCard, StatusPill, Eyebrow, Banner, SideRow, SideNote } from "widgets.slint";
+
+component DiagGrid {
+    in property <[DiagRow]> rows;
+    in property <int> columns: 1;
+    private property <length> cell: self.width / columns;
+    private property <length> row-height: 33px;
+    height: ceil(rows.length / columns) * row-height;
+    for row[index] in rows: Rectangle {
+        x: mod(index, columns) * cell;
+        y: floor(index / columns) * row-height;
+        width: cell;
+        height: row-height;
+        Rectangle { x: parent.width - 1px; width: 1px; background: Theme.row; }
+        Rectangle { y: parent.height - 1px; height: 1px; background: Theme.row; }
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            spacing: 10px;
+            Text { text: row.name; color: Theme.text-2; font-family: Theme.mono; font-size: 11.5px; overflow: elide; vertical-alignment: center; horizontal-stretch: 1; }
+            Text { text: row.value; color: Theme.text; font-family: Theme.mono; font-size: 12px; vertical-alignment: center; }
+        }
+    }
+}
+
+component SessionSide inherits Panel {
+    min-height: column.preferred-height;
+    column := VerticalLayout {
+        PanelHeading { title: T.s("Session"); }
+        VerticalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 6px;
+            padding-bottom: 6px;
+            SideRow { first: true; label: T.s("Library"); value: CaptureState.library != "" ? CaptureState.library : T.s("Unavailable"); }
+            SideRow { label: T.s("Combat decoding"); value: T.s("Live combat"); }
+            if CaptureState.stop-reason != "": SideRow { label: T.s("Stopped"); value: T.s(CaptureState.stop-reason); }
+        }
+        if CaptureState.file != "": SideNote { text: CaptureState.file; x: 16px; width: parent.width - 32px; font-family: Theme.mono; }
+        VerticalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 6px;
+            padding-bottom: 6px;
+            SideRow { first: true; label: T.s("Packet persistence"); value: T.s(CaptureState.debug-enabled ? "Debug · packets table (bounded)" : "Off · combat data only"); }
+        }
+        VerticalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 4px;
+            padding-bottom: 14px;
+            spacing: 14px;
+            SideNote { text: T.s("Live capture does not create PCAP files. The database stores combat timelines, contributions, players, party membership and equipment used by the meter. Replay uses a temporary file which is deleted after analysis."); }
+            SideNote { text: T.f("Choose a system socket or {library}. Stop capture before changing the method. Socket capture needs administrator rights on Windows or CAP_NET_RAW on Linux.", "library", CaptureState.capture-library); }
+            if CaptureState.debug-enabled: SideNote { text: T.s("Debug mode stores at most 10,000 packets or 32 MB of packet payloads in the packets table. Set Capture__Debug=false and restart to disable it."); }
+        }
+    }
+}
+
+component DiagnosticsPanel inherits Panel {
+    min-height: column.preferred-height;
+    column := VerticalLayout {
+        PanelHeading { title: T.s("Diagnostics"); count: CaptureState.diagnostics.length; note: T.s("Decoder counters for the current capture"); }
+        if CaptureState.diagnostics.length == 0: Text { text: T.s("No capture report yet."); color: Theme.muted; font-size: 12.5px; horizontal-alignment: center; height: 62px; vertical-alignment: center; }
+        if CaptureState.diagnostics.length > 0: DiagGrid { rows: CaptureState.diagnostics; columns: max(1, floor(root.width / 240px)); }
+    }
+}
+
+// web/src/CapturePanel.tsx: the capture method and interface, start/stop/replay, permission help and the decoder counters.
+export component CaptureView inherits VerticalLayout {
+    private property <bool> locked: CaptureState.busy || CaptureState.active;
+    private property <bool> columns: self.width > 1240px;
+    spacing: 14px;
+    Panel {
+        min-height: column.preferred-height;
+        Rectangle {
+        x: parent.width - self.width / 2;
+        y: - self.height / 2;
+        width: 640px;
+        height: 640px;
+        background: @radial-gradient(circle, #f08a2412 0%, #f08a2400 60%);
+    }
+        column := VerticalLayout {
+            head := HorizontalLayout {
+                padding: 18px;
+                spacing: 16px;
+                VerticalLayout {
+                    spacing: 6px;
+                    horizontal-stretch: 1;
+                    Eyebrow { text: T.s("PACKET CAPTURE & REPLAY"); }
+                    Text { text: T.s("Observe the connection."); color: Theme.text; font-size: 20px; font-weight: 600; letter-spacing: -0.4px; }
+                    Text { text: T.s("Observe the network or analyze a saved PCAP / PCAPNG. Starting an interface does not start an encounter; press Play in Overview to record combat."); color: Theme.muted; font-size: 12.5px; wrap: word-wrap; max-width: 720px; }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    horizontal-stretch: 0;
+                    VerticalLayout { alignment: start; StatusPill { status: CaptureState.state; } }
+                    Text { text: T.s(CaptureState.source); color: Theme.muted; font-family: Theme.mono; font-size: 12px; height: 22px; vertical-alignment: center; }
+                }
+            }
+            Rectangle { height: 1px; background: Theme.border; }
+            HorizontalLayout {
+                padding-left: 18px;
+                padding-right: 18px;
+                padding-top: 14px;
+                padding-bottom: 14px;
+                spacing: 16px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    horizontal-stretch: 1;
+                    Select {
+                        horizontal-stretch: 1;
+                        enabled: !locked;
+                        selected: CaptureState.method-index;
+                        options: CaptureState.methods;
+                        changed(value) => { CaptureState.method-changed(value); }
+                    }
+                    Select {
+                        horizontal-stretch: 1;
+                        enabled: !locked;
+                        selected: CaptureState.device-index;
+                        placeholder: T.s("Select network interface");
+                        options: CaptureState.devices;
+                        changed(value) => { CaptureState.device-changed(value); }
+                    }
+                    Button { text: T.s("Refresh"); enabled: !locked; clicked => { CaptureState.refresh(); } }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Button { text: T.s("Start capture"); variant: "primary"; enabled: !locked && CaptureState.device != ""; clicked => { CaptureState.start(); } }
+                    Button { text: T.s("Stop"); enabled: CaptureState.active && !CaptureState.stopping; clicked => { CaptureState.stop(); } }
+                    Button { text: T.s("Replay capture"); enabled: !locked; clicked => { CaptureState.replay(); } }
+                }
+            }
+            if CaptureState.devices-error != "": Text {
+                x: 18px;
+                width: parent.width - 36px;
+                text: T.f("Capture interface access: {error}", "error", CaptureState.devices-error);
+                color: Theme.muted;
+                font-size: 12px;
+                wrap: word-wrap;
+            }
+            if CaptureState.error != "": HorizontalLayout {
+                padding-left: 18px;
+                padding-right: 18px;
+                padding-bottom: 14px;
+                Banner { text: CaptureState.error; }
+            }
+            if CaptureState.hint != "": HorizontalLayout {
+                padding-left: 18px;
+                padding-right: 18px;
+                padding-bottom: 14px;
+                Rectangle {
+                    border-width: 1px;
+                    border-color: Theme.border-strong;
+                    border-radius: Theme.radius-sm;
+                    background: Theme.surface-2;
+                    min-height: hint.preferred-height;
+                    hint := VerticalLayout {
+                        padding-left: 14px;
+                        padding-right: 14px;
+                        padding-top: 12px;
+                        padding-bottom: 12px;
+                        spacing: 8px;
+                        if CaptureState.hint == "windows": Text { text: T.s("Close Albion Meter and open it again as administrator (right-click AlbionMeter.Server.exe, Run as administrator). Packet capture uses a Windows raw socket and needs no driver."); color: Theme.text-2; font-size: 12px; wrap: word-wrap; }
+                        if CaptureState.hint == "grant": HorizontalLayout {
+                            spacing: 12px;
+                            Text { text: T.s("Albion Meter needs permission to read the game traffic. Allow it once with your system password and capture starts right away."); color: Theme.text-2; font-size: 12px; wrap: word-wrap; horizontal-stretch: 1; vertical-alignment: center; }
+                            Button { text: T.s(CaptureState.granting ? "Waiting for permission…" : "Allow packet capture"); variant: "primary"; enabled: !CaptureState.granting; clicked => { CaptureState.grant(); } }
+                        }
+                        if CaptureState.hint == "setcap": VerticalLayout {
+                            spacing: 8px;
+                            Text { text: T.s("Grant packet capture permission once, then restart Albion Meter:"); color: Theme.text-2; font-size: 12px; wrap: word-wrap; }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                Rectangle {
+                                    border-width: 1px;
+                                    border-color: Theme.border;
+                                    border-radius: 6px;
+                                    background: Theme.bg;
+                                    horizontal-stretch: 1;
+                                    clip: true;
+                                    TextInput { x: 10px; width: parent.width - 20px; text: CaptureState.setcap; read-only: true; color: Theme.text; font-family: Theme.mono; font-size: 12px; vertical-alignment: center; single-line: true; }
+                                }
+                                Button { text: T.s(CaptureState.copied ? "Copied" : "Copy"); clicked => { CaptureState.copy-setcap(); } }
+                            }
+                            Text { text: T.s("Rebuilding or replacing the executable removes this permission."); color: Theme.muted; font-size: 11px; }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    HorizontalLayout {
+        spacing: 14px;
+        StatCard { narrow: root.width <= 1080px; icon: Icons.activity; tone: "orange"; label: T.s("Captured frames"); value: CaptureState.frames; }
+        StatCard { narrow: root.width <= 1080px; icon: Icons.layers; tone: "blue"; label: T.s("Transport messages"); value: CaptureState.transport; }
+        StatCard { narrow: root.width <= 1080px; icon: Icons.database; tone: "violet"; label: T.s("Processed traffic"); value: CaptureState.traffic; }
+        StatCard { narrow: root.width <= 1080px; icon: Icons.info; tone: "red"; label: T.s("Adapter drops"); value: CaptureState.drops; }
+    }
+    if columns: HorizontalLayout {
+        spacing: 14px;
+        alignment: start;
+        DiagnosticsPanel { horizontal-stretch: 1; }
+        SessionSide { width: 340px; }
+    }
+    if !columns: DiagnosticsPanel { }
+    if !columns: SessionSide { }
+}

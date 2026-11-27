@@ -1,0 +1,1046 @@
+import { Theme } from "theme.slint";
+import { Shell } from "state.slint";
+import { Icon, Icons } from "icons.slint";
+import { Button, Segmented, SegButton, Select, SelectOption, Panel, PanelHeading, StatCard, StatusPill, Eyebrow, Banner, TextField, ShareBar, ItemIcon, CountBadge } from "widgets.slint";
+
+// web/src/Library.tsx DungeonJournal, Timeline.tsx, TimelineInspector.tsx, DungeonLoadout.tsx and HistoryTransfer.tsx.
+// That screen is English only in the web UI too.
+
+export struct RunRow {
+    id: string,
+    entrance: string,
+    status: string,
+    line: string,
+    damage: string,
+    healing: string,
+    started: string,
+    active: bool,
+}
+
+export struct FloorTab {
+    number: int,
+    label: string,
+    time: string,
+    active: bool,
+}
+
+export struct AxisLabel {
+    text: string,
+    // Pixels in the plot.
+    at: float,
+}
+
+export struct Series {
+    color: color,
+    line: string,
+    area: string,
+    fill: bool,
+}
+
+export struct LegendRow {
+    name: string,
+    color: color,
+}
+
+export struct InspectorItem {
+    name: string,
+    sources: string,
+    value: string,
+    icon: image,
+    has-icon: bool,
+    tier: string,
+}
+
+export struct InspectorPlayer {
+    id: string,
+    name: string,
+    color: color,
+    icon: image,
+    has-icon: bool,
+    tier: string,
+    damage: string,
+    healing: string,
+    rate: string,
+    value: string,
+    share: string,
+    open: bool,
+    items: [InspectorItem],
+}
+
+export struct LoadoutRow {
+    id: string,
+    // player | item | empty
+    kind: string,
+    open: bool,
+    name: string,
+    sub: string,
+    color: color,
+    slot: string,
+    damage: string,
+    damage-share: float,
+    damage-bar: bool,
+    dps: string,
+    healing: string,
+    healing-share: float,
+    healing-bar: bool,
+    hps: string,
+    icon: image,
+    has-icon: bool,
+    tier: string,
+    bar-color: color,
+}
+
+export struct FloorRow {
+    number: int,
+    label: string,
+    map: string,
+    map-id: string,
+    time: string,
+    damage: string,
+    dps: string,
+    healing: string,
+    hps: string,
+    share: float,
+    selected: bool,
+}
+
+export struct Cell {
+    value: string,
+    sub: string,
+}
+
+export struct ProgressionRow {
+    id: string,
+    kind: string,
+    open: bool,
+    name: string,
+    sub: string,
+    cells: [Cell],
+    icon: image,
+    has-icon: bool,
+    tier: string,
+}
+
+export global JournalState {
+    in property <[RunRow]> runs;
+    in property <string> list-note;
+    in property <string> error;
+    in property <bool> has-run;
+    in property <string> run-name;
+    in property <string> run-title;
+    in property <string> run-status;
+    in property <string> run-meta;
+    in property <[FloorTab]> floors;
+    in property <bool> has-totals;
+    in property <string> damage;
+    in property <string> damage-note;
+    in property <string> dps;
+    in property <string> healing;
+    in property <string> healing-note;
+    in property <string> hps;
+    in property <string> time;
+    in property <string> chart-title;
+    in property <string> chart-note;
+    in property <string> metric: "damage";
+    in property <int> grouping-index;
+    in property <bool> item-grouping;
+    in property <int> resolution-index;
+    in property <int> range-index;
+    // Timeline
+    in property <[AxisLabel]> y-labels;
+    in property <[AxisLabel]> x-labels;
+    in property <[float]> grid;
+    in property <[Series]> series;
+    in property <bool> can-inspect;
+    in property <bool> has-data;
+    in property <bool> no-players;
+    in property <string> empty-title;
+    in property <string> empty-text;
+    in property <bool> cursor-shown;
+    in property <float> cursor-x;
+    in property <string> cursor-label;
+    in property <float> plot-top;
+    in property <float> plot-bottom;
+    in property <bool> scrubber;
+    in property <float> scrubber-max;
+    in property <float> scrubber-value;
+    in property <bool> latest;
+    in property <[LegendRow]> legend;
+    in property <bool> series-legend;
+    // Inspector
+    in property <string> interval;
+    in property <int> scope-index;
+    in property <int> order-index;
+    in property <string> inspector-metric: "damage";
+    in property <string> summary-total;
+    in property <string> summary-rate;
+    in property <[InspectorPlayer]> inspector;
+    in-out property <string> inspector-search;
+    // Tables
+    in property <string> loadout-note;
+    in property <string> loadout-count;
+    in property <bool> loadout-toggle;
+    in property <bool> loadout-all;
+    in property <[LoadoutRow]> loadout;
+    in property <[FloorRow]> floor-rows;
+    in property <string> floors-note;
+    in property <[string]> progression-heads;
+    in property <[ProgressionRow]> progression;
+    in property <string> progression-note;
+    in property <bool> progression-toggle;
+    in property <bool> progression-all;
+    // History transfer
+    in property <bool> exporting;
+    in property <bool> importing;
+    in property <string> transfer-message;
+    in property <bool> transfer-error;
+    in property <bool> link-copied;
+
+    callback select-run(string);
+    callback select-floor(int);
+    callback metric-changed(string);
+    callback grouping-changed(string);
+    callback resolution-changed(string);
+    callback range-changed(string);
+    callback plot-resized(length, length);
+    callback pick(length);
+    // ArrowLeft | ArrowRight | Home | End | Enter | Escape, and whether Shift was held
+    callback key(string, bool);
+    callback scrub(float);
+    callback follow-latest();
+    callback scope-changed(string);
+    callback order-changed(string);
+    callback inspector-metric-changed(string);
+    callback inspector-search-changed(string);
+    callback toggle-player(string);
+    callback toggle-loadout(string);
+    callback toggle-loadout-all();
+    callback toggle-progression(string);
+    callback toggle-progression-all();
+    callback export-run();
+    callback export-history();
+    callback import-history();
+    callback dismiss-transfer();
+    callback copy-link();
+    callback copy-ranking(string);
+}
+
+component RunEntry inherits Rectangle {
+    in property <RunRow> run;
+    min-height: column.preferred-height;
+    border-radius: Theme.radius-sm;
+    border-width: 1px;
+    border-color: run.active ? #f08a2466 : touch.has-hover ? Theme.border-strong : transparent;
+    background: run.active ? @linear-gradient(90deg, #2a2119 0%, Theme.surface-2 70%) : touch.has-hover ? Theme.hover : Theme.surface-2;
+    if run.active: Rectangle { x: 0; width: 3px; background: Theme.accent; border-radius: 1.5px; }
+    column := VerticalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 11px;
+        padding-bottom: 11px;
+        spacing: 4px;
+        HorizontalLayout {
+            spacing: 8px;
+            Text { text: run.entrance; color: Theme.text; font-size: 13px; font-weight: 600; overflow: elide; horizontal-stretch: 1; vertical-alignment: center; }
+            StatusPill { status: run.status; }
+        }
+        Text { text: run.line; color: Theme.muted; font-size: 11px; }
+        HorizontalLayout {
+            spacing: 4px;
+            alignment: start;
+            Text { text: run.damage; color: Theme.text-2; font-family: Theme.mono; font-size: 11px; font-weight: 600; }
+            Text { text: "dmg"; color: Theme.muted; font-size: 11px; }
+            Text { text: run.healing; color: Theme.text-2; font-family: Theme.mono; font-size: 11px; font-weight: 600; }
+            Text { text: "heal"; color: Theme.muted; font-size: 11px; }
+        }
+        Text { text: run.started; color: Theme.muted; font-size: 11px; }
+    }
+    touch := TouchArea { mouse-cursor: pointer; clicked => { JournalState.select-run(run.id); } }
+}
+
+component RunList inherits Panel {
+    min-height: column.preferred-height;
+    column := VerticalLayout {
+        PanelHeading { title: "Runs"; count: JournalState.runs.length; }
+        if JournalState.error != "": HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 14px;
+            Text { text: JournalState.error; color: Theme.muted; font-size: 12px; wrap: word-wrap; }
+        }
+        if JournalState.runs.length == 0: HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 14px;
+            padding-bottom: 14px;
+            Text { text: JournalState.list-note; color: Theme.muted; font-size: 12px; wrap: word-wrap; }
+        }
+        VerticalLayout {
+            padding: 8px;
+            spacing: 6px;
+            for run in JournalState.runs: RunEntry { run: run; }
+        }
+    }
+}
+
+component FloorTabButton inherits Rectangle {
+    in property <FloorTab> tab;
+    height: 34px;
+    min-width: row.preferred-width;
+    border-radius: Theme.radius-sm;
+    background: tab.active ? Theme.accent-soft : touch.has-hover ? Theme.surface-2 : transparent;
+    border-width: tab.active ? 1px : 0px;
+    border-color: #f08a2455;
+    row := HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 7px;
+        Text { text: tab.label; color: tab.active ? Theme.accent : touch.has-hover ? Theme.text : Theme.muted; font-size: 12.5px; font-weight: 500; vertical-alignment: center; }
+        Text { text: tab.time; color: tab.active ? Theme.accent : Theme.faint; opacity: tab.active ? 0.8 : 1; font-family: Theme.mono; font-size: 10.5px; vertical-alignment: center; }
+    }
+    touch := TouchArea { mouse-cursor: pointer; clicked => { JournalState.select-floor(tab.number); } }
+}
+
+component RunHero inherits Panel {
+    min-height: column.preferred-height;
+    Rectangle {
+        x: parent.width - self.width / 2;
+        y: - self.height / 2;
+        width: 640px;
+        height: 640px;
+        background: @radial-gradient(circle, #f08a2414 0%, #f08a2400 60%);
+    }
+    column := VerticalLayout {
+        HorizontalLayout {
+            padding-left: 18px;
+            padding-right: 18px;
+            padding-top: 18px;
+            padding-bottom: 14px;
+            spacing: 14px;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 6px;
+                Eyebrow { text: JournalState.run-name.to-uppercase(); }
+                Text { text: JournalState.run-title; color: Theme.text; font-size: 22px; font-weight: 600; letter-spacing: -0.44px; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+                    StatusPill { status: JournalState.run-status; }
+                    Text { text: JournalState.run-meta; color: Theme.muted; font-size: 12px; vertical-alignment: center; }
+                }
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: end;
+                Button { y: 0; text: JournalState.exporting ? "Exporting…" : "Export dungeon"; enabled: !JournalState.exporting; clicked => { JournalState.export-run(); } }
+                Button { y: 0; text: JournalState.link-copied ? "Link copied" : "Copy link"; tooltip: "Copy a link to this run"; clicked => { JournalState.copy-link(); } }
+            }
+        }
+        Rectangle {
+            background: #0000001a;
+            min-height: tabs.preferred-height;
+            Rectangle { y: 0; height: 1px; background: Theme.border; }
+            tabs := HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                padding-top: 8px;
+                padding-bottom: 8px;
+                spacing: 4px;
+                alignment: start;
+                for tab in JournalState.floors: FloorTabButton { tab: tab; }
+            }
+        }
+    }
+}
+
+// Timeline.tsx: one line per player or item over time, a cursor that pins an interval, and the scrubber.
+component Timeline inherits Rectangle {
+    private property <float> left: 48;
+    plot := FocusScope {
+        x: 0;
+        y: 12px;
+        width: parent.width;
+        height: parent.height - 12px - (JournalState.can-inspect ? 22px : 0px) - (JournalState.series-legend ? legend.preferred-height : 0px) - (JournalState.scrubber ? 30px : 0px);
+        changed width => { JournalState.plot-resized(self.width, self.height); }
+        changed height => { JournalState.plot-resized(self.width, self.height); }
+        init => { JournalState.plot-resized(self.width, self.height); }
+        key-pressed(event) => {
+            if event.text == Key.LeftArrow { JournalState.key("ArrowLeft", event.modifiers.shift); return accept; }
+            if event.text == Key.RightArrow { JournalState.key("ArrowRight", event.modifiers.shift); return accept; }
+            if event.text == Key.Home { JournalState.key("Home", false); return accept; }
+            if event.text == Key.End { JournalState.key("End", false); return accept; }
+            if event.text == Key.Return { JournalState.key("Enter", false); return accept; }
+            if event.text == Key.Escape { JournalState.key("Escape", false); return accept; }
+            reject
+        }
+        for line in JournalState.grid: Rectangle {
+            x: left * 1px;
+            y: line * 1px;
+            width: parent.width - left * 1px - 16px;
+            height: 1px;
+            background: line == JournalState.plot-bottom ? #2a323d : #161c24;
+        }
+        for label in JournalState.y-labels: Text {
+            x: 0;
+            y: label.at * 1px - 7px;
+            width: left * 1px - 10px;
+            text: label.text;
+            color: #66707d;
+            font-family: Theme.mono;
+            font-size: 10px;
+            horizontal-alignment: right;
+        }
+        for label in JournalState.x-labels: Text {
+            x: label.at * 1px - 40px;
+            y: parent.height - 18px;
+            width: 80px;
+            text: label.text;
+            color: #66707d;
+            font-family: Theme.mono;
+            font-size: 10px;
+            horizontal-alignment: center;
+        }
+        for line in JournalState.series: Rectangle {
+            if line.fill: Path {
+                width: plot.width;
+                height: plot.height;
+                viewbox-x: 0;
+                viewbox-y: 0;
+                viewbox-width: plot.width / 1px;
+                viewbox-height: plot.height / 1px;
+                commands: line.area;
+                fill: @linear-gradient(180deg, line.color.with-alpha(0.10) 0%, line.color.with-alpha(0) 100%);
+            }
+            Path {
+                width: plot.width;
+                height: plot.height;
+                viewbox-x: 0;
+                viewbox-y: 0;
+                viewbox-width: plot.width / 1px;
+                viewbox-height: plot.height / 1px;
+                commands: line.line;
+                stroke: line.color;
+                stroke-width: 1.5px;
+                stroke-line-join: round;
+            }
+        }
+        if JournalState.cursor-shown: Rectangle {
+            x: JournalState.cursor-x * 1px - 0.75px;
+            y: JournalState.plot-top * 1px;
+            width: 1.5px;
+            height: (JournalState.plot-bottom - JournalState.plot-top) * 1px;
+            background: #f5a640;
+        }
+        if JournalState.cursor-shown: Path {
+            x: JournalState.cursor-x * 1px - 5px;
+            y: JournalState.plot-top * 1px - 8px;
+            width: 10px;
+            height: 6px;
+            viewbox-width: 10;
+            viewbox-height: 6;
+            commands: "M0 0h10L5 6z";
+            fill: #f5a640;
+        }
+        if JournalState.cursor-shown: Rectangle {
+            x: max(0px, min(parent.width - 56px, JournalState.cursor-x * 1px - 28px));
+            y: parent.height - 30px;
+            width: 56px;
+            height: 14px;
+            background: Theme.surface;
+            Text { text: JournalState.cursor-label; color: #f5a640; font-family: Theme.mono; font-size: 11px; horizontal-alignment: center; }
+        }
+        if !JournalState.has-data: VerticalLayout {
+            alignment: center;
+            spacing: 6px;
+            Icon { x: (parent.width - 22px) / 2; d: Icons.chart; size: 22px; color: Theme.faint; }
+            Text { text: JournalState.empty-title; color: Theme.text-2; font-size: 13px; font-weight: 600; horizontal-alignment: center; }
+            Text { text: JournalState.empty-text; color: Theme.muted; font-size: 12px; horizontal-alignment: center; }
+        }
+        if JournalState.no-players: Text { text: "Select a player below the chart."; color: Theme.text-2; font-size: 13px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+        TouchArea {
+            enabled: JournalState.can-inspect;
+            mouse-cursor: JournalState.can-inspect ? crosshair : default;
+            pointer-event(event) => {
+                if event.kind == PointerEventKind.down && event.button == PointerEventButton.left { plot.focus(); JournalState.pick(self.mouse-x); }
+            }
+            moved => { if self.pressed { JournalState.pick(self.mouse-x); } }
+        }
+    }
+    if JournalState.can-inspect: Text {
+        x: 4px;
+        y: plot.y + plot.height + 5px;
+        text: "Click or drag to inspect an interval · Arrow keys move the cursor";
+        color: Theme.muted;
+        font-size: 11px;
+    }
+    legend := HorizontalLayout {
+        x: 12px;
+        y: plot.y + plot.height + 22px;
+        width: parent.width - 24px;
+        visible: JournalState.series-legend;
+        spacing: 14px;
+        alignment: start;
+        for entry in JournalState.legend: HorizontalLayout {
+            spacing: 6px;
+            Rectangle { width: 12px; height: 4px; y: (parent.height - 4px) / 2; border-radius: 2px; background: entry.color; }
+            Text { text: entry.name; color: Theme.text-2; font-size: 12px; }
+        }
+    }
+    if JournalState.scrubber: HorizontalLayout {
+        x: 0;
+        y: parent.height - 30px;
+        width: parent.width;
+        height: 30px;
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 12px;
+        Text { text: "Earlier"; color: Theme.muted; font-size: 12px; vertical-alignment: center; }
+        track := Rectangle {
+            horizontal-stretch: 1;
+            Rectangle { height: 3px; border-radius: 1.5px; background: Theme.surface-3; }
+            Rectangle {
+                x: 0;
+                height: 3px;
+                width: parent.width * JournalState.scrubber-value / max(1, JournalState.scrubber-max);
+                border-radius: 1.5px;
+                background: Theme.accent;
+            }
+            Rectangle {
+                x: parent.width * JournalState.scrubber-value / max(1, JournalState.scrubber-max) - 7px;
+                width: 14px;
+                height: 14px;
+                border-radius: 7px;
+                background: Theme.accent;
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                pointer-event(event) => {
+                    if event.kind == PointerEventKind.down { JournalState.scrub(clamp(self.mouse-x / self.width, 0, 1) * JournalState.scrubber-max); }
+                }
+                moved => { if self.pressed { JournalState.scrub(clamp(self.mouse-x / self.width, 0, 1) * JournalState.scrubber-max); } }
+            }
+        }
+        Text {
+            text: "Latest";
+            color: JournalState.latest ? Theme.accent : Theme.muted;
+            font-size: 12px;
+            vertical-alignment: center;
+            TouchArea { mouse-cursor: pointer; clicked => { JournalState.follow-latest(); } }
+        }
+    }
+}
+
+component InspectorRow inherits VerticalLayout {
+    in property <InspectorPlayer> player;
+    Rectangle {
+        min-height: 36px;
+        background: touch.has-hover ? #ffffff05 : transparent;
+        HorizontalLayout {
+            padding-top: 3px;
+            padding-bottom: 3px;
+            spacing: 7px;
+            HorizontalLayout {
+                width: 33px;
+                Rectangle { width: 2px; background: player.color; }
+                Rectangle { width: 3px; }
+                ItemIcon { size: 26px; icon: player.icon; has-icon: player.has-icon; }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 3px;
+                Text { text: player.name; color: Theme.text; font-size: 11px; font-weight: 700; overflow: elide; }
+                HorizontalLayout {
+                    spacing: 6px;
+                    alignment: start;
+                    Text { text: "D " + player.damage; color: Theme.muted; font-size: 9px; }
+                    Text { text: "H " + player.healing; color: Theme.muted; font-size: 9px; }
+                    Text { text: player.rate; color: Theme.muted; font-size: 9px; }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 3px;
+                Text { text: player.value; color: Theme.text; font-size: 11px; font-weight: 700; horizontal-alignment: right; }
+                Text { text: player.share; color: Theme.muted; font-size: 9px; horizontal-alignment: right; }
+            }
+            Text {
+                width: 10px;
+                text: "›";
+                color: Theme.muted;
+                font-size: 16px;
+                vertical-alignment: center;
+                transform-rotation: player.open ? 90deg : 0deg;
+            }
+        }
+        touch := TouchArea { mouse-cursor: pointer; clicked => { JournalState.toggle-player(player.id); } }
+    }
+    if player.open: VerticalLayout {
+        padding-left: 12px;
+        padding-bottom: 8px;
+        for item in player.items: HorizontalLayout {
+            padding-top: 6px;
+            padding-bottom: 6px;
+            spacing: 10px;
+            ItemIcon { size: 28px; icon: item.icon; has-icon: item.has-icon; tier: item.tier; }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 3px;
+                Text { text: item.name; color: Theme.text; font-size: 10px; wrap: word-wrap; }
+                Text { text: item.sources; color: Theme.muted; font-size: 9px; wrap: word-wrap; }
+            }
+            Text { text: item.value; color: Theme.text; font-size: 10px; font-weight: 700; vertical-alignment: center; }
+        }
+        if player.items.length == 0: Text { text: "No attributed source items in this interval."; color: Theme.muted; font-size: 10px; }
+    }
+    Rectangle { height: 1px; background: Theme.border; }
+}
+
+// TimelineInspector.tsx
+component Inspector inherits Rectangle {
+    background: #0c1017;
+    border-width: 1px;
+    border-color: Theme.border-strong;
+    border-radius: Theme.radius-sm;
+    clip: true;
+    VerticalLayout {
+        HorizontalLayout {
+            padding-left: 10px;
+            padding-right: 10px;
+            padding-top: 8px;
+            padding-bottom: 8px;
+            spacing: 12px;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 3px;
+                Text { text: "Interval analysis"; color: Theme.text; font-size: 11px; font-weight: 700; }
+                Text { text: JournalState.interval; color: Theme.muted; font-size: 10px; }
+            }
+            Button { text: "↦"; h: 24px; pad: 8px; tooltip: "Follow latest interval"; y: (parent.height - self.height) / 2; clicked => { JournalState.key("Escape", false); } }
+        }
+        Rectangle { height: 1px; background: Theme.border; }
+        GridLayout {
+            padding-left: 9px;
+            padding-right: 9px;
+            padding-top: 7px;
+            padding-bottom: 7px;
+            spacing: 5px;
+            Row {
+                Select {
+                    height: 27px;
+                    min-w: 0px;
+                    selected: JournalState.scope-index;
+                    options: [{ value: "interval", label: "Selected interval" }, { value: "record", label: "Entire record" }];
+                    changed(value) => { JournalState.scope-changed(value); }
+                }
+                Select {
+                    height: 27px;
+                    min-w: 0px;
+                    selected: JournalState.order-index;
+                    options: [{ value: "damage", label: "Highest damage" }, { value: "healing", label: "Highest healing" }, { value: "name", label: "Player name" }, { value: "party", label: "Party order" }];
+                    changed(value) => { JournalState.order-changed(value); }
+                }
+            }
+            Row {
+                Segmented {
+                    min-height: 27px;
+                    SegButton { height: 23px; pad: 8px; text: "Damage"; active: JournalState.inspector-metric == "damage"; clicked => { JournalState.inspector-metric-changed("damage"); } }
+                    SegButton { height: 23px; pad: 8px; text: "Healing"; active: JournalState.inspector-metric == "healing"; clicked => { JournalState.inspector-metric-changed("healing"); } }
+                }
+                TextField {
+                    h: 27px;
+                    text: JournalState.inspector-search;
+                    placeholder: "Find a player…";
+                    edited(value) => { JournalState.inspector-search-changed(value); }
+                }
+            }
+        }
+        Rectangle { height: 1px; background: Theme.border; }
+        HorizontalLayout {
+            padding-left: 10px;
+            padding-right: 10px;
+            padding-top: 7px;
+            padding-bottom: 7px;
+            spacing: 8px;
+            Text { text: JournalState.summary-total; color: Theme.text-2; font-size: 10px; horizontal-stretch: 1; }
+            Text { text: JournalState.summary-rate; color: Theme.text-2; font-size: 10px; }
+        }
+        Rectangle { height: 1px; background: Theme.border; }
+        Flickable {
+            vertical-stretch: 1;
+            content-height: players.preferred-height;
+            players := VerticalLayout {
+                width: parent.width;
+                padding-left: 9px;
+                padding-right: 9px;
+                alignment: start;
+                for player in JournalState.inspector: InspectorRow { player: player; }
+                if JournalState.inspector.length == 0: Text { text: "No players match this search."; color: Theme.muted; font-size: 11px; }
+            }
+        }
+        Rectangle { height: 1px; background: Theme.border; }
+        HorizontalLayout {
+            padding-left: 10px;
+            height: 24px;
+            Text { text: "← → Move cursor · Expand a player to inspect items"; color: Theme.muted; font-size: 9px; vertical-alignment: center; }
+        }
+    }
+}
+
+component Th inherits Text {
+    color: Theme.muted;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.84px;
+    vertical-alignment: center;
+}
+
+component Td inherits Text {
+    color: Theme.text-2;
+    font-family: Theme.mono;
+    font-size: 12.5px;
+    horizontal-alignment: right;
+    vertical-alignment: center;
+}
+
+// DungeonLoadout.tsx LoadoutTable: a group per player with its items under it.
+component LoadoutTable {
+    VerticalLayout {
+        if JournalState.loadout-toggle: HorizontalLayout {
+            padding-top: 10px;
+            padding-right: 14px;
+            alignment: end;
+            Button { text: JournalState.loadout-all ? "Collapse all" : "Expand all"; clicked => { JournalState.toggle-loadout-all(); } }
+        }
+        Rectangle {
+            height: 38px;
+            HorizontalLayout {
+                padding-left: 30px;
+                padding-right: 14px;
+                Th { horizontal-stretch: 2.6; min-width: 0px; preferred-width: 0px; text: "PLAYER / ITEM"; }
+                Th { width: 80px; text: "SLOT"; }
+                Th { horizontal-stretch: 1; min-width: 0px; preferred-width: 0px; text: "DAMAGE"; horizontal-alignment: right; }
+                Th { horizontal-stretch: 1; min-width: 0px; preferred-width: 0px; text: "    SHARE"; }
+                Th { horizontal-stretch: 1; min-width: 0px; preferred-width: 0px; text: "DPS"; horizontal-alignment: right; }
+                Th { horizontal-stretch: 1; min-width: 0px; preferred-width: 0px; text: "HEALING"; horizontal-alignment: right; }
+                Th { horizontal-stretch: 1; min-width: 0px; preferred-width: 0px; text: "    SHARE"; }
+                Th { horizontal-stretch: 1; min-width: 0px; preferred-width: 0px; text: "HPS"; horizontal-alignment: right; }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+        }
+        for row in JournalState.loadout: Rectangle {
+            height: row.kind == "player" ? 58px : row.kind == "item" ? 54px : 38px;
+            background: touch.has-hover ? Theme.hover : row.kind == "player" ? Theme.surface-2 : transparent;
+            if row.kind == "player": Rectangle { y: 0; height: 1px; background: Theme.border-strong; }
+            if row.kind != "player": Rectangle { x: 16px; width: 1px; background: Theme.border-strong; }
+            if row.kind == "player": Text { x: 11px; text: "›"; color: row.open ? Theme.accent : Theme.muted; font-size: 14px; vertical-alignment: center; transform-rotation: row.open ? 90deg : 0deg; }
+            HorizontalLayout {
+                padding-left: 30px;
+                padding-right: 14px;
+                HorizontalLayout {
+                    horizontal-stretch: 2.6;
+                    min-width: 0px;
+                    preferred-width: 0px;
+                    padding-left: row.kind == "player" ? 0px : 10px;
+                    spacing: 10px;
+                    if row.kind != "empty": ItemIcon { icon: row.icon; has-icon: row.has-icon; tier: row.tier; }
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 2px;
+                        horizontal-stretch: 1;
+                        HorizontalLayout {
+                            spacing: 8px;
+                            if row.kind == "player": Rectangle { width: 9px; height: 9px; y: (parent.height - 9px) / 2; border-radius: 3px; background: row.color; }
+                            Text { text: row.name; color: row.kind == "player" ? Theme.text : row.kind == "empty" ? Theme.muted : Theme.text-2; font-size: 13px; font-weight: row.kind == "player" ? 600 : 400; overflow: elide; horizontal-stretch: 1; }
+                        }
+                        if row.sub != "": Text { text: row.sub; color: Theme.muted; font-size: 11px; overflow: elide; }
+                    }
+                }
+                Text { width: 80px; text: row.slot; color: Theme.muted; font-size: 13px; vertical-alignment: center; }
+                Td { horizontal-stretch: 1; min-width: 0px; preferred-width: 0px; text: row.damage; }
+                HorizontalLayout { horizontal-stretch: 1; min-width: 0px; preferred-width: 0px; padding-left: 14px; if row.damage-bar: ShareBar { min-width: 0px; value: row.damage-share; color: row.bar-color; y: (parent.height - self.height) / 2; } }
+                Td { horizontal-stretch: 1; min-width: 0px; preferred-width: 0px; text: row.dps; }
+                Td { horizontal-stretch: 1; min-width: 0px; preferred-width: 0px; text: row.healing; }
+                HorizontalLayout { horizontal-stretch: 1; min-width: 0px; preferred-width: 0px; padding-left: 14px; if row.healing-bar: ShareBar { min-width: 0px; value: row.healing-share; color: row.bar-color; y: (parent.height - self.height) / 2; } }
+                Td { horizontal-stretch: 1; min-width: 0px; preferred-width: 0px; text: row.hps; }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.row; }
+            touch := TouchArea { enabled: row.kind == "player"; mouse-cursor: pointer; clicked => { JournalState.toggle-loadout(row.id); } }
+        }
+    }
+}
+
+component FloorsTable {
+    VerticalLayout {
+        Rectangle {
+            height: 38px;
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                Th { width: 100px; text: "FLOOR"; }
+                Th { width: 220px; text: "MAP"; }
+                Th { horizontal-stretch: 1; min-width: 0px; preferred-width: 0px; text: "TIME"; horizontal-alignment: right; }
+                Th { horizontal-stretch: 1; min-width: 0px; preferred-width: 0px; text: "DAMAGE"; horizontal-alignment: right; }
+                Th { horizontal-stretch: 1; min-width: 0px; preferred-width: 0px; text: "PARTY DPS"; horizontal-alignment: right; }
+                Th { horizontal-stretch: 1; min-width: 0px; preferred-width: 0px; text: "HEALING"; horizontal-alignment: right; }
+                Th { horizontal-stretch: 1; min-width: 0px; preferred-width: 0px; text: "PARTY HPS"; horizontal-alignment: right; }
+                Th { width: 180px; text: "    SHARE OF DUNGEON"; }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+        }
+        for row in JournalState.floor-rows: Rectangle {
+            height: 52px;
+            background: row.selected || touch.has-hover ? Theme.hover : transparent;
+            if row.selected: Rectangle { x: 0; width: 3px; background: Theme.accent; }
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                Text { width: 100px; text: row.label; color: Theme.text; font-size: 13px; font-weight: 700; vertical-alignment: center; }
+                VerticalLayout {
+                    width: 220px;
+                    alignment: center;
+                    spacing: 2px;
+                    Text { text: row.map; color: Theme.text-2; font-size: 13px; overflow: elide; }
+                    Text { text: row.map-id; color: Theme.muted; font-size: 11px; }
+                }
+                Td { horizontal-stretch: 1; min-width: 0px; preferred-width: 0px; text: row.time; }
+                Td { horizontal-stretch: 1; min-width: 0px; preferred-width: 0px; text: row.damage; }
+                Td { horizontal-stretch: 1; min-width: 0px; preferred-width: 0px; text: row.dps; }
+                Td { horizontal-stretch: 1; min-width: 0px; preferred-width: 0px; text: row.healing; }
+                Td { horizontal-stretch: 1; min-width: 0px; preferred-width: 0px; text: row.hps; }
+                HorizontalLayout { width: 180px; padding-left: 14px; ShareBar { min-width: 0px; value: row.share; y: (parent.height - self.height) / 2; } }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.row; }
+            touch := TouchArea { mouse-cursor: pointer; clicked => { JournalState.select-floor(row.number); } }
+        }
+    }
+}
+
+// DungeonLoadout.tsx LoadoutProgression: each player's and item's share on every floor.
+component ProgressionTable {
+    private property <float> name-stretch: 0.39 * max(1, JournalState.progression-heads.length);
+    VerticalLayout {
+        if JournalState.progression-toggle: HorizontalLayout {
+            padding-top: 10px;
+            padding-right: 14px;
+            alignment: end;
+            Button { text: JournalState.progression-all ? "Collapse all" : "Expand all"; clicked => { JournalState.toggle-progression-all(); } }
+        }
+        Rectangle {
+            height: 38px;
+            HorizontalLayout {
+                padding-left: 30px;
+                padding-right: 14px;
+                Th { horizontal-stretch: name-stretch; min-width: 0px; preferred-width: 0px; text: "PLAYER / ITEM"; }
+                for head in JournalState.progression-heads: Th { horizontal-stretch: 1; min-width: 0px; preferred-width: 0px; text: head; horizontal-alignment: right; }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+        }
+        for row in JournalState.progression: Rectangle {
+            height: 58px;
+            background: touch.has-hover ? Theme.hover : row.kind == "player" ? Theme.surface-2 : transparent;
+            if row.kind == "player": Rectangle { y: 0; height: 1px; background: Theme.border-strong; }
+            if row.kind == "player": Text { x: 11px; text: "›"; color: row.open ? Theme.accent : Theme.muted; font-size: 14px; vertical-alignment: center; transform-rotation: row.open ? 90deg : 0deg; }
+            if row.kind != "player": Rectangle { x: 16px; width: 1px; background: Theme.border-strong; }
+            HorizontalLayout {
+                padding-left: 30px;
+                padding-right: 14px;
+                HorizontalLayout {
+                    horizontal-stretch: name-stretch;
+                    min-width: 0px;
+                    preferred-width: 0px;
+                    padding-left: row.kind == "player" ? 0px : 10px;
+                    spacing: 10px;
+                    ItemIcon { icon: row.icon; has-icon: row.has-icon; tier: row.tier; }
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 2px;
+                        horizontal-stretch: 1;
+                        Text { text: row.name; color: row.kind == "player" ? Theme.text : Theme.text-2; font-size: 13px; font-weight: row.kind == "player" ? 600 : 400; overflow: elide; }
+                        Text { text: row.sub; color: Theme.muted; font-size: 11px; overflow: elide; }
+                    }
+                }
+                for cell in row.cells: VerticalLayout {
+                    horizontal-stretch: 1; min-width: 0px; preferred-width: 0px;
+                    alignment: center;
+                    spacing: 2px;
+                    Td { text: cell.value; }
+                    Text { text: cell.sub; color: Theme.muted; font-size: 11px; horizontal-alignment: right; }
+                }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.row; }
+            touch := TouchArea { enabled: row.kind == "player"; mouse-cursor: pointer; clicked => { JournalState.toggle-progression(row.id); } }
+        }
+    }
+}
+
+component Section inherits Panel {
+    in property <string> title;
+    in property <string> note;
+    in property <string> count;
+    min-height: column.preferred-height;
+    column := VerticalLayout {
+        PanelHeading { title: root.title; note: root.note; count: root.count; }
+        @children
+    }
+}
+
+// HistoryTransfer.tsx: export every record, or import an exported file.
+component HistoryTransfer inherits VerticalLayout {
+    spacing: 10px;
+    HorizontalLayout {
+        alignment: end;
+        spacing: 8px;
+        Button { text: JournalState.exporting ? "Exporting…" : "Export history"; enabled: !JournalState.exporting; clicked => { JournalState.export-history(); } }
+        Button { text: JournalState.importing ? "Importing…" : "Import history"; enabled: !JournalState.importing; clicked => { JournalState.import-history(); } }
+    }
+    if JournalState.transfer-message != "" && JournalState.transfer-error: Banner { text: JournalState.transfer-message; action: "×"; act => { JournalState.dismiss-transfer(); } }
+    if JournalState.transfer-message != "" && !JournalState.transfer-error: Rectangle {
+        border-width: 1px;
+        border-color: Theme.border;
+        background: Theme.surface;
+        min-height: result.preferred-height;
+        result := HorizontalLayout {
+            padding: 12px;
+            spacing: 8px;
+            Text { text: JournalState.transfer-message; color: Theme.text-2; font-size: 13px; wrap: word-wrap; horizontal-stretch: 1; }
+            Text { text: "×"; color: Theme.text-2; TouchArea { mouse-cursor: pointer; clicked => { JournalState.dismiss-transfer(); } } }
+        }
+    }
+}
+
+component ChartSection inherits Panel {
+    private property <bool> side: JournalState.can-inspect && Shell.window-width > 1140px;
+    min-height: column.preferred-height;
+    column := VerticalLayout {
+        PanelHeading {
+            title: JournalState.chart-title;
+            note: JournalState.chart-note;
+            Segmented {
+                SegButton { text: "Damage"; active: JournalState.metric == "damage"; clicked => { JournalState.metric-changed("damage"); } }
+                SegButton { text: "Healing"; active: JournalState.metric == "healing"; clicked => { JournalState.metric-changed("healing"); } }
+            }
+            Select {
+                width: 110px;
+                min-w: 0px;
+                selected: JournalState.grouping-index;
+                options: [{ value: "player", label: "By player" }, { value: "item", label: "By item", disabled: !JournalState.item-grouping }];
+                changed(value) => { JournalState.grouping-changed(value); }
+            }
+            Select {
+                width: 70px;
+                min-w: 0px;
+                selected: JournalState.resolution-index;
+                options: [{ value: "1", label: "1s" }, { value: "5", label: "5s" }, { value: "10", label: "10s" }, { value: "30", label: "30s" }, { value: "60", label: "1m" }];
+                changed(value) => { JournalState.resolution-changed(value); }
+            }
+            Select {
+                width: 120px;
+                min-w: 0px;
+                selected: JournalState.range-index;
+                options: [{ value: "30", label: "Last 30s" }, { value: "120", label: "Last 2m" }, { value: "600", label: "Last 10m" }, { value: "0", label: "Full dungeon" }];
+                changed(value) => { JournalState.range-changed(value); }
+            }
+        }
+        if side: HorizontalLayout {
+            padding-right: 12px;
+            padding-top: 12px;
+            spacing: 12px;
+            Timeline { height: 500px; horizontal-stretch: 1; }
+            Inspector { height: 500px; width: clamp((Shell.window-width - 40px) * 0.3, 300px, 390px); }
+        }
+        if !side: Timeline { height: JournalState.can-inspect ? 400px : 300px; }
+        if !side && JournalState.can-inspect: HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 12px;
+            padding-bottom: 12px;
+            Inspector { height: 420px; }
+        }
+        if !JournalState.series-legend: Rectangle {
+            min-height: legend.preferred-height;
+            Rectangle { y: 0; height: 1px; background: Theme.border; }
+            legend := HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 10px;
+                padding-bottom: 12px;
+                spacing: 8px;
+                alignment: start;
+                for entry in JournalState.legend: Rectangle {
+                    height: 26px;
+                    min-width: chip.preferred-width;
+                    border-radius: 13px;
+                    background: Theme.surface-2;
+                    chip := HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        spacing: 7px;
+                        Rectangle { width: 12px; height: 4px; y: (parent.height - 4px) / 2; border-radius: 2px; background: entry.color; }
+                        Text { text: entry.name; color: Theme.text-2; font-size: 12px; vertical-alignment: center; }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component JournalView inherits VerticalLayout {
+    private property <bool> columns: Shell.window-width > 1280px;
+    spacing: 14px;
+    HistoryTransfer { }
+    HorizontalLayout {
+        spacing: 14px;
+        if columns: VerticalLayout { width: 300px; alignment: start; RunList { } }
+        VerticalLayout {
+            spacing: 14px;
+            horizontal-stretch: 1;
+            alignment: start;
+            if !columns: RunList { }
+            if !JournalState.has-run: Panel {
+                min-height: 200px;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 8px;
+                    padding: 28px;
+                    Icon { x: (parent.width - 22px) / 2; d: Icons.layers; size: 22px; color: Theme.faint; }
+                    Text { text: "Waiting for dungeon"; color: Theme.text; font-size: 16px; font-weight: 600; horizontal-alignment: center; }
+                    Text { text: "Observed dungeon entries and floor changes appear here during capture."; color: Theme.muted; font-size: 12.5px; horizontal-alignment: center; }
+                }
+            }
+            if JournalState.has-run: RunHero { }
+            if JournalState.has-run && JournalState.has-totals: HorizontalLayout {
+                spacing: 12px;
+                StatCard { narrow: Shell.window-width <= 1140px; icon: Icons.flame; tone: "red"; label: "Damage"; value: JournalState.damage; note: JournalState.damage-note; }
+                StatCard { narrow: Shell.window-width <= 1140px; icon: Icons.sword; tone: "orange"; label: "Party DPS"; value: JournalState.dps; }
+                StatCard { narrow: Shell.window-width <= 1140px; icon: Icons.heart; tone: "green"; label: "Healing"; value: JournalState.healing; note: JournalState.healing-note; }
+                StatCard { narrow: Shell.window-width <= 1140px; icon: Icons.zap; tone: "blue"; label: "Party HPS"; value: JournalState.hps; }
+                StatCard { narrow: Shell.window-width <= 1140px; icon: Icons.clock; tone: "amber"; label: "Observed time"; value: JournalState.time; }
+            }
+            if JournalState.has-run && JournalState.has-totals: ChartSection { }
+            if JournalState.has-run && JournalState.has-totals: Section {
+                title: "Players & equipment";
+                count: JournalState.loadout-count;
+                note: JournalState.loadout-note;
+                LoadoutTable { }
+            }
+            if JournalState.has-run: Section {
+                title: "Floors";
+                count: JournalState.floor-rows.length;
+                note: JournalState.floors-note;
+                FloorsTable { }
+            }
+            if JournalState.has-run: Section {
+                title: "Progression by floor";
+                note: JournalState.progression-note;
+                ProgressionTable { }
+            }
+            if JournalState.has-run: Text {
+                text: "Rates use observed time on each floor, including idle time. Aggregate timelines join recorded floor segments in time order. Floor numbers follow discovery order.";
+                color: Theme.faint;
+                font-size: 11px;
+                wrap: word-wrap;
+            }
+        }
+    }
+}

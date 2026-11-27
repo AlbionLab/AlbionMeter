@@ -1,0 +1,179 @@
+import { SelectOption } from "widgets.slint";
+
+// Everything Rust shows is set here; every action goes back through these callbacks. Text that carries numbers or
+// depends on the data is formatted (and translated) in Rust; fixed labels are translated in the UI with T.s.
+
+export struct BarRow {
+    id: string,
+    rank: int,
+    name: string,
+    weapon: string,
+    icon: image,
+    has-icon: bool,
+    color: color,
+    fraction: float,
+    value: string,
+    share: string,
+    rate: string,
+}
+
+export global Shell {
+    in property <string> version;
+    // The window's width, set when it changes: responsive choices read it instead of their own width, which their
+    // layout decides.
+    in-out property <length> window-width: 1280px;
+    in-out property <length> window-height: 820px;
+    in-out property <string> view: "meter";
+    // connecting | connected | reconnecting | disconnected
+    in property <string> connection: "connecting";
+    // idle | running | paused | completed
+    in property <string> record-status: "idle";
+    in property <bool> has-snapshot;
+    in property <bool> maximized;
+    in property <bool> journal-enabled;
+    in property <string> error;
+    // idle | checking | current | downloading | ready | installing | error
+    in property <string> update-state: "idle";
+    in property <string> update-version;
+    in property <int> update-percent;
+    in property <string> update-progress;
+    in-out property <string> update-later;
+    callback set-language(bool);
+    // minimize | maximize | close | drag | resize-<n|s|e|w|ne|nw|se|sw>
+    callback window-action(string);
+    callback dismiss-error();
+    callback install-update();
+    callback open-url(string);
+}
+
+export global MeterState {
+    in property <string> clock: "00:00";
+    in-out property <string> metric: "damage";
+    in property <[BarRow]> bars;
+    in property <string> total-note;
+    in property <bool> can-control;
+    // "", reset, end, disconnect
+    in-out property <string> confirm;
+    in property <bool> copy-available;
+    in property <bool> copy-busy;
+    in property <string> copy-done;
+    in property <string> copy-error;
+    // Capture notice
+    in property <bool> notice-failed;
+    in property <string> notice-reason;
+    in property <string> notice-pending;
+    // play | pause | resume | reset | end
+    callback control(string);
+    callback confirmed(string);
+    callback metric-changed(string);
+    // image | text | names
+    callback copy(string);
+}
+
+export global LabState {
+    in property <bool> loaded;
+    in property <bool> connected;
+    in property <bool> has-account;
+    in property <string> account-name;
+    in property <image> avatar;
+    in property <bool> has-avatar;
+    in property <bool> pairing;
+    in property <string> pair-code;
+    in property <string> verify-url;
+    // "", revoked, denied, expired
+    in property <string> pairing-error;
+    in property <bool> has-session;
+    // live | completed | offline | other
+    in property <string> session-state;
+    in property <string> session-url;
+    // The URL without its scheme, as the card shows it.
+    in property <string> session-link;
+    in property <string> session-id;
+    in property <string> session-title;
+    in property <string> session-error;
+    in property <string> visibility: "unlisted";
+    in property <bool> anonymize;
+    in property <bool> share-location;
+    in property <string> suggested-title;
+    in property <string> server;
+    in property <string> error;
+    in property <bool> copied;
+    callback connect();
+    callback copy-link();
+    callback save-title(string);
+    callback set-visibility(string);
+    callback set-anonymize(bool);
+    callback set-share-location(bool);
+    callback disconnect();
+}
+
+export struct DiagRow {
+    name: string,
+    value: string,
+}
+
+export global CaptureState {
+    in property <string> state: "connecting";
+    in property <string> source: "none";
+    in property <[SelectOption]> methods;
+    in property <string> method;
+    in property <int> method-index: -1;
+    in property <[SelectOption]> devices;
+    in property <string> device;
+    in property <int> device-index: -1;
+    in property <bool> busy;
+    in property <bool> active;
+    in property <bool> stopping;
+    in property <string> error;
+    in property <string> devices-error;
+    // "", windows, grant, setcap
+    in property <string> hint;
+    in property <string> setcap;
+    in property <bool> granting;
+    in property <bool> copied;
+    in property <string> frames: "0";
+    in property <string> transport: "0";
+    in property <string> traffic: "—";
+    in property <string> drops: "—";
+    in property <[DiagRow]> diagnostics;
+    in property <string> library;
+    in property <string> stop-reason;
+    in property <string> file;
+    in property <bool> debug-enabled;
+    in property <string> capture-library: "libpcap";
+    callback method-changed(string);
+    callback device-changed(string);
+    callback refresh();
+    callback start();
+    callback stop();
+    callback replay();
+    callback grant();
+    callback copy-setcap();
+}
+
+export struct CatalogRow {
+    name: string,
+    group: string,
+    tier: string,
+    id: string,
+}
+
+export global CatalogState {
+    in-out property <string> tab: "weapons";
+    in property <string> weapon-count: "0";
+    in property <string> map-count: "0";
+    in property <string> game-version;
+    in property <[CatalogRow]> rows;
+    in property <string> results;
+    in property <bool> empty;
+    in-out property <string> search;
+    in property <string> message;
+    in property <bool> busy;
+    in property <string> storage;
+    in property <string> imported: "—";
+    in property <string> maps-kept: "0";
+    in property <string> weapons-kept: "0";
+    callback tab-changed(string);
+    callback search-changed(string);
+    callback import();
+}

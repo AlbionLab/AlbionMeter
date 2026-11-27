@@ -4,9 +4,13 @@ fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") && std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
         println!("cargo:rustc-link-arg-bins=/STACK:8388608");
         // pcap 2.5 brings windows-sys 0.36, whose windows.lib imports WaitOnAddress and WakeByAddress* from vertdll.dll
-        // (the enclave runtime, which crashes outside an enclave). MSVC's linker takes each symbol from the first
-        // library that has it, and this crate's own libraries come first: std's thread parking gets the real ones.
+        // (the enclave runtime, which crashes outside an enclave). Linking synchronization.lib alone fixed the release
+        // build (LTO) but not a debug one, where std still found windows.lib first: the symbols are made unresolved
+        // from the start of the link instead, so they come from this crate's synchronization.lib, listed first.
         println!("cargo:rustc-link-lib=dylib=synchronization");
+        for symbol in ["WaitOnAddress", "WakeByAddressSingle", "WakeByAddressAll"] {
+            println!("cargo:rustc-link-arg=/INCLUDE:__imp_{symbol}");
+        }
     }
     // Debug builds keep the element names and accessibility data the UI tests and fixture screenshots look controls up by.
     let debug = std::env::var("PROFILE").as_deref() == Ok("debug");

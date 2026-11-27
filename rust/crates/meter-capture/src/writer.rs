@@ -189,9 +189,9 @@ mod tests {
         let bytes = std::fs::read(&path).unwrap();
         assert_eq!(parse(&bytes).1, frames());
 
-        // libpcap reads it back the same.
+        // libpcap reads it back the same (on Windows only where Npcap is installed: a CI runner has none).
         #[cfg(feature = "pcap")]
-        {
+        if libpcap_installed() {
             let mut file = pcap::Capture::from_file(&path).unwrap();
             // LINKTYPE_RAW in the file is DLT_RAW (12) inside libpcap.
             assert_eq!(file.get_datalink(), pcap::Linktype(12));
@@ -215,5 +215,13 @@ mod tests {
             ));
         }
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[cfg(feature = "pcap")]
+    fn libpcap_installed() -> bool {
+        #[cfg(windows)]
+        return crate::windows::npcap::load();
+        #[cfg(not(windows))]
+        return true;
     }
 }

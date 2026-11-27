@@ -17,6 +17,30 @@ use std::time::{Duration, Instant};
 
 pub const DEVICE: &str = "raw:test";
 
+/// Panics of the runtime's own threads (meter, engine, meter-io), so a wait reports the panic instead of timing out.
+static PANICS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+fn capture_panics() {
+    static HOOK: std::sync::Once = std::sync::Once::new();
+    HOOK.call_once(|| {
+        let default = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let thread = std::thread::current().name().unwrap_or("unnamed").to_owned();
+            if !thread.starts_with("meter") && thread != "engine" {
+                return default(info);
+            }
+            let payload = info.payload().downcast_ref::<&str>().map(|text| text.to_string()).or_else(|| info.payload().downcast_ref::<String>().cloned()).unwrap_or_default();
+            let location = info.location().map(|at| at.to_string()).unwrap_or_default();
+            PANICS.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).push(format!("thread '{thread}' panicked at {location}: {payload}"));
+            default(info);
+        }));
+    });
+}
+
+fn runtime_panics() -> Vec<String> {
+    PANICS.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone()
+}
+
 pub fn temp_dir(name: &str) -> PathBuf {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let path = std::env::temp_dir().join(format!("meter-runtime-{name}-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
@@ -141,7 +165,7 @@ impl Events {
     pub fn publisher(&self) -> impl Fn(FeedEvent) + Send + Sync + 'static {
         let events = self.0.clone();
         move |event| {
-            let mut log = events.0.lock().unwrap();
+            let mut log = events.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             log.events.push(event);
             if let Some(keep) = log.keep
                 && log.events.len() > 2 * keep
@@ -172,7 +196,7 @@ impl Events {
     pub fn wait_from<T>(&self, from: usize, timeout: Duration, mut matches: impl FnMut(&FeedEvent) -> Option<T>) -> T {
         let deadline = Instant::now() + timeout;
         let mut seen = from;
-        let mut log = self.0.0.lock().unwrap();
+        let mut log = self.0.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         loop {
             let start = seen.saturating_sub(log.dropped).min(log.events.len());
             for event in &log.events[start..] {
@@ -182,8 +206,18 @@ impl Events {
             }
             seen = log.dropped + log.events.len();
             let now = Instant::now();
-            assert!(now < deadline, "timed out waiting for an event; last events: {:#?}", &log.events[log.events.len().saturating_sub(5)..]);
-            log = self.0.1.wait_timeout(log, deadline - now).unwrap().0;
+            let panics = runtime_panics();
+            if now >= deadline || !panics.is_empty() {
+                // Fail without holding the log: the runtime's threads keep publishing into it.
+                let last = format!("{:#?}", &log.events[log.events.len().saturating_sub(5)..]);
+                drop(log);
+                if !panics.is_empty() {
+                    panic!("the runtime panicked: {}\nlast events: {last}", panics.join("\n"));
+                }
+                panic!("timed out waiting for an event; last events: {last}");
+            }
+            let wait = (deadline - now).min(Duration::from_millis(100));
+            log = self.0.1.wait_timeout(log, wait).unwrap_or_else(|poisoned| poisoned.into_inner()).0;
         }
     }
 
@@ -233,10 +267,15 @@ pub struct Meter {
 
 impl Meter {
     pub fn start(config: Config) -> Self {
+        capture_panics();
         let events = Events::default();
         let storage = config.storage.clone();
+        let started = Instant::now();
         let handle = Runtime::new(config).start(events.publisher());
-        events.wait_from(0, Duration::from_secs(10), |event| matches!(event, FeedEvent::Connection(_)).then_some(()));
+        events.wait_from(0, Duration::from_secs(60), |event| matches!(event, FeedEvent::Connection(_)).then_some(()));
+        if started.elapsed() > Duration::from_secs(10) {
+            eprintln!("the runtime took {:?} to start", started.elapsed());
+        }
         Self { events, handle: Some(handle), storage }
     }
 

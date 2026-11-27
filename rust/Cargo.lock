@@ -2943,7 +2943,7 @@ dependencies = [
 
 [[package]]
 name = "meter-app"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "arboard",
  "i-slint-backend-testing",
@@ -2961,7 +2961,7 @@ dependencies = [
 
 [[package]]
 name = "meter-capture"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "crossbeam-channel",
  "libc",
@@ -2974,7 +2974,7 @@ dependencies = [
 
 [[package]]
 name = "meter-core"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "bumpalo",
  "cbc",
@@ -2990,7 +2990,7 @@ dependencies = [
 
 [[package]]
 name = "meter-lab"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "futures-util",
  "gethostname",
@@ -3009,7 +3009,7 @@ dependencies = [
 
 [[package]]
 name = "meter-runtime"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "crossbeam-channel",
  "libc",
@@ -3027,7 +3027,7 @@ dependencies = [
 
 [[package]]
 name = "meter-store"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "meter-core",
  "rusqlite",

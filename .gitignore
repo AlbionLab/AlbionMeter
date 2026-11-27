@@ -1,7 +1,4 @@
-**/bin/
-**/obj/
-web/node_modules/
-src/AlbionMeter.Server/wwwroot/
+**/target/
 artifacts/
 .local/
 *.db

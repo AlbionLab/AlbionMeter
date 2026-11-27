@@ -20,7 +20,7 @@
 <p align="center">
   <a href="https://github.com/AlbionLab/AlbionMeter/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/AlbionLab/AlbionMeter?style=for-the-badge&label=release&labelColor=1E2126&color=F98714"></a>
   <a href="https://github.com/AlbionLab/AlbionMeter/releases"><img alt="GitHub downloads" src="https://img.shields.io/github/downloads/AlbionLab/AlbionMeter/total?style=for-the-badge&label=downloads&labelColor=1E2126&color=EF476F"></a>
-  <a href="https://github.com/AlbionLab/AlbionMeter/actions/workflows/build.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/AlbionLab/AlbionMeter/build.yml?branch=main&style=for-the-badge&label=build&labelColor=1E2126"></a>
+  <a href="https://github.com/AlbionLab/AlbionMeter/actions/workflows/rust.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/AlbionLab/AlbionMeter/rust.yml?branch=main&style=for-the-badge&label=build&labelColor=1E2126"></a>
   <a href="https://discord.gg/pAWsSxN5X2"><img alt="Discord" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdiscord.com%2Fapi%2Fguilds%2F1563966378002878655%2Fwidget.json&query=%24.presence_count&suffix=%20online&label=discord&logo=discord&logoColor=7289da&labelColor=1E2126&color=7289da&style=for-the-badge"></a>
   <a href="https://albionlab.app"><img alt="albionlab.app" src="https://img.shields.io/badge/albionlab.app-sessions%20%26%20analysis-F98714?style=for-the-badge&labelColor=1E2126"></a>
 </p>
@@ -77,32 +77,25 @@ The dungeon location is never shared unless you turn it on. Connecting is option
 
 ## What to install
 
-Albion Meter uses the .NET installed on your computer, so install these once before opening it.
+Nothing else: Albion Meter is a single native program (Rust, with a Slint interface), with no .NET, browser or
+Electron behind it. It updates itself from the GitHub releases.
 
-### Windows 10 / 11 (64-bit)
-
-| | What | Download |
+| | Windows 10 / 11 (64-bit) | Linux (64-bit) |
 | --- | --- | --- |
-| Required | .NET Runtime 10 (x64) | [dotnet-runtime-win-x64.exe](https://aka.ms/dotnet/10.0/dotnet-runtime-win-x64.exe) |
-| Required | ASP.NET Core Runtime 10 (x64) | [aspnetcore-runtime-win-x64.exe](https://aka.ms/dotnet/10.0/aspnetcore-runtime-win-x64.exe) |
-| Optional | Npcap — only for the **Npcap** capture method (the default **System socket** needs nothing) | [npcap.com](https://npcap.com/#download) |
+| Download | `AlbionLab.AlbionMeter-rust-win-Setup.exe` (or the portable `.zip`) | `AlbionLab.AlbionMeter-rust-linux.AppImage` |
+| Packet capture | asks for administrator once at start | asks for your password once (pkexec) to allow it |
+| Optional | [Npcap](https://npcap.com/#download), only for the **Npcap** capture method (the default **System socket** needs nothing) | — |
 
-All .NET 10 downloads: [dotnet.microsoft.com/download/dotnet/10.0](https://dotnet.microsoft.com/download/dotnet/10.0).
-
-### Linux (64-bit)
-
-| | What | Install |
-| --- | --- | --- |
-| Required | ASP.NET Core Runtime 10 | Ubuntu/Debian `sudo apt install aspnetcore-runtime-10.0` · Fedora `sudo dnf install aspnetcore-runtime-10.0` · Arch `sudo pacman -S aspnet-runtime` · [others](https://learn.microsoft.com/dotnet/core/install/linux) |
-| Optional | libpcap — only for the **libpcap** capture method | `libpcap0.8` on Ubuntu/Debian, `libpcap` elsewhere |
-
-Allow packet capture once after extracting: `sudo setcap cap_net_raw=ep ./AlbionMeter.Server`.
+Players on the previous (Electron) meter are moved to this one by its own update; history and settings stay where
+they are.
 
 ## Getting started
 
-Download the latest version at [albionlab.app](https://albionlab.app/#download) and follow the [step-by-step tutorial](https://albionlab.app/tutorial). In short:
+Download the latest version at [albionlab.app](https://albionlab.app/#download) or from the
+[`rust-latest` release](https://github.com/AlbionLab/AlbionMeter/releases/tag/rust-latest) and follow the
+[step-by-step tutorial](https://albionlab.app/tutorial). In short:
 
-1. Install the requirements above, extract the download and open `AlbionMeter.Server` (accept the administrator prompt on Windows). Go to `http://127.0.0.1:5187`.
+1. Install and open Albion Meter (accept the administrator or password prompt).
 2. **Game data** → **Import game folder** → choose the folder that contains `Albion-Online_Data`.
 3. **Capture** → keep **System socket**, pick your network interface → **Start capture**.
 4. Optionally, **Connect account** in the AlbionLab card.
@@ -110,16 +103,16 @@ Download the latest version at [albionlab.app](https://albionlab.app/#download) 
 
 ## Build from source
 
-Requirements: .NET SDK 10 and Node.js 24.
+Requirements: Rust (stable). On Linux also `libxkbcommon-dev libwayland-dev libfontconfig1-dev` (and `libpcap-dev` to
+run the capture tests).
 
 ```bash
-npm ci --prefix web
-node scripts/dev.mjs
+cd rust
+cargo run --release -p meter-app
 ```
 
-The script builds the interface and the server, then starts the meter. On Linux it asks for the `cap_net_raw` capability after every build; on Windows the program asks for administrator rights.
-
-Records are stored in `encounters.db` inside the user's local data folder (`AlbionMeter`). Use `--Storage:Directory=<path>` to choose another folder.
+Records are stored in `encounters.db` inside the user's local data folder (`AlbionMeter`; or a `data` folder next to
+the executable when there is one). Use `--Storage:Directory=<path>` to choose another folder.
 
 ### Configuration
 
@@ -130,46 +123,31 @@ Records are stored in `encounters.db` inside the user's local data folder (`Albi
 | `Capture:Debug` | `false` | Store raw packets (bounded) in the database for troubleshooting. |
 | `AlbionLab:Url` | `https://albionlab.app` | Site used to publish sessions. |
 
-Settings can be passed as arguments (`--Capture:AutoStart=true`) or environment variables (`Capture__AutoStart=true`).
+Settings are passed as arguments (`--Capture:AutoStart=true`).
 
 ### Tests
 
 ```bash
-dotnet run --project tests/AlbionMeter.Tests
-npm test --prefix web
+cd rust
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
 ```
 
-### Packages
+### Releases
 
-```bash
-node scripts/publish.mjs win-x64
-node scripts/publish.mjs linux-x64
-```
-
-Each command publishes a build that runs on the installed .NET 10 to `artifacts/<runtime>`, with a `LEIA-ME.txt` (English and Portuguese), and creates the matching `.zip` or `.tar.gz` package.
-
-### Desktop app
-
-`desktop/` is an Electron window around the same React page. It starts the bundled server (self-contained, so no .NET runtime is needed), stops it cleanly when closed and updates itself from the GitHub releases with electron-updater. On Windows it asks for administrator once at start for packet capture; on Linux it grants `cap_net_raw` to its copy of the server through a pkexec prompt the first time each version runs.
-
-```bash
-dotnet publish src/AlbionMeter.Server -c Release -r linux-x64 --self-contained true -o desktop/server
-npm ci --prefix desktop
-npm start --prefix desktop
-npm run dist:linux --prefix desktop
-```
-
-`dist:win` and `dist:linux` build the NSIS installer, the AppImage and the `.deb` in `desktop/dist`.
-
-The version comes from `<Version>` in `Directory.Build.props`. Every push to `main` builds the packages and the desktop installers and publishes them, with `SHA256SUMS.txt`, to the GitHub release `v<Version>`: a new version creates a new release, the same version replaces its files. Download the latest from [Releases](https://github.com/AlbionLab/AlbionMeter/releases/latest).
+The version comes from `version` in `rust/Cargo.toml`. Every push to `rust` runs `.github/workflows/rust.yml` on Linux
+and Windows (clippy, tests, the release build, a smoke test of the executable) and packages the meter with Velopack.
+When every check passes, a push to `rust` publishes the release `rust-v<version>` (a new version creates it, the same version replaces
+its files, with `SHA256SUMS.txt`) and refreshes `rust-latest`, the update feed installed meters read.
 
 ### Layout
 
-- `src/AlbionMeter.Core` — packet capture, Photon decoding, combat observation and aggregation.
-- `src/AlbionMeter.Server` — local server, record controls, history and AlbionLab publishing.
-- `web` — the meter interface (React + TypeScript).
-- `tests` — C# checks.
-- `tools` — capture inspection and game data import command-line tools.
+- `rust/crates/meter-capture` — live capture (system sockets, Npcap) and pcap files.
+- `rust/crates/meter-core` — Photon decoding, combat observation, aggregation, dungeon runs and catalogs.
+- `rust/crates/meter-runtime` — the meter's threads: capture, the engine, saves, AlbionLab and icons.
+- `rust/crates/meter-store` — history (SQLite), identities and history export/import.
+- `rust/crates/meter-lab` — the AlbionLab account and live sessions.
+- `rust/crates/meter-app` — the window and every screen (Slint), settings and updates.
 - `assets/game-data` — combat and map catalogs generated from the game data.
 - `docs` — protocol and capture notes.
 

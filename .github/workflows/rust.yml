@@ -1,11 +1,12 @@
 name: Rust
-# The Rust port (rust/): lint, tests, the release build and the Velopack packages, on Linux and Windows. A push to `rust`
-# also publishes them, the way build.yml publishes the Electron meter:
+# Albion Meter (rust/): lint, tests, the release build and the Velopack packages, on Linux and Windows. A push to `rust`
+# also publishes them:
 #   - `rust-v<version>`: the release of this version (Setup.exe, AppImage, the full packages), with the version taken from
 #     rust/Cargo.toml; pushing again without a new version replaces its files, as electron-builder's release does;
 #   - `rust-latest`: always the newest version's packages and `releases.<channel>.json`, the update feed (Velopack's
 #     latest.yml) the meter reads from a fixed address, however many Electron releases come after it.
-# Both are prereleases and never GitHub's "Latest": the Electron meter's updater keeps reading only its own releases.
+# Both are prereleases and never GitHub's "Latest": that stays the last Electron meter (v0.1.29), whose update is the
+# Rust meter itself, so a player still on any older Electron version updates to it and from there moves to Rust.
 on:
   push:
     branches: [rust]
@@ -178,7 +179,7 @@ jobs:
           mkdir -p ../package/assets
           cp "target/release/${{ matrix.exe }}" ../package/
           cp ../assets/game-data/combat.json ../assets/game-data/maps.json ../package/assets/
-          if [ "$RUNNER_OS" = Windows ]; then icon=../src/AlbionMeter.Server/app.ico; else icon=crates/meter-app/assets/icon.png; fi
+          if [ "$RUNNER_OS" = Windows ]; then icon=crates/meter-app/assets/icon.ico; else icon=crates/meter-app/assets/icon.png; fi
           if [ "$RUNNER_OS" = Windows ]; then channel=rust-win; else channel=rust-linux; fi
           # Not "AlbionMeter": Velopack installs into %LocalAppData%\<packId> and removes that folder on uninstall, and
           # %LocalAppData%\AlbionMeter is the meter's history.

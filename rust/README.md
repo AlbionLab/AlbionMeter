@@ -62,3 +62,21 @@ Contracts between crates:
 ## Libraries
 
 `slint` (UI; winit backend, femtovg renderer with software fallback for weak GPUs), `pcap` (Npcap/libpcap), `libc` (AF_PACKET + BPF), `rusqlite` with `bundled`, `serde`/`serde_json`, `tokio`, `reqwest` (rustls), `tokio-tungstenite` (minimal SignalR JSON hub client), `velopack` (updates + installers), `windows` (elevation, firewall), `crossbeam-channel`.
+
+## Real-time guarantees (acceptance gates, measured in CI and on a weak PC)
+
+| Gate | Limit | How it is measured |
+|---|---|---|
+| Packet → engine | p99 < 2 ms | timestamp at `CaptureFrame` vs. after `Analysis::add`, histogram in a replay bench |
+| Packet → pixels | p99 < 300 ms (≤ 4 Hz UI) | engine publish time vs. Slint frame rendered |
+| Decode throughput | ≥ 50× real raid traffic on one core | `cargo bench` (criterion) on recorded pcaps |
+| Dropped game packets | 0 at 5× real traffic | capture thread drop counter in a soak test |
+| RAM | idle ≤ 60 MB, 2 h fight ≤ 90 MB, no growth after the 2 h cap | RSS sampled every 10 s in a 2 h soak |
+| CPU | idle < 1 %, 20-player fight < 5 % of one core | soak test, `/proc/<pid>/stat` / Windows perf counters |
+| Allocations per packet | 0 in steady state on the decode path | counting global allocator in a test |
+
+Design rules behind them: the capture thread only copies bytes into recycled buffers; the engine thread owns all state and never waits on I/O (SQLite, HTTP and icons run on tokio and receive owned copies); the UI gets an `Arc` snapshot plus a "what changed" set and updates only those model rows; nothing in the UI animates or polls while idle (event-driven redraw only); bounded channels everywhere, so overload drops and counts instead of growing memory or latency.
+
+## UI parity gate
+
+Every screen and state of the React app is rendered twice from the **same fake data** — the React build via Playwright with mocked `/api` routes (as `web/tests/race-guards.mjs` does) and the Slint app with `--fake --screen <name>` — and compared side by side (`rust/scripts/ui-parity.mjs`, images in `rust/target/ui-parity/`). A screen is done only when the two match in layout, spacing, colours, fonts, icons and text, and every interaction listed in `rust/docs/ui-checklist.md` works.

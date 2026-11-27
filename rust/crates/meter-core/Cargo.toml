@@ -4,4 +4,19 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+bumpalo = { version = "3.20", features = ["collections"] }
+cbc = { version = "0.1.2", features = ["alloc"] }
+des = "0.8.1"
+flate2 = "1.1"
 meter-capture.workspace = true
+roxmltree = "0.21"
+serde = { workspace = true, features = ["rc"] }
+serde_json.workspace = true
+sha2 = "0.10"
+
+[dev-dependencies]
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "replay"
+harness = false
